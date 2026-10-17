@@ -113,8 +113,14 @@ def compare_reports(baseline_path: str | Path, current_path: str | Path) -> dict
             "current_severity": current_severity,
             "finding": finding,
         }
-        mutable_fields = ("title", "message", "remediation", "severity")
-        if any(previous.get(field) != finding.get(field) for field in mutable_fields):
+        mutable_fields = ("title", "message", "remediation", "severity", "resource")
+        changes = {
+            field: {"previous": previous.get(field), "current": finding.get(field)}
+            for field in mutable_fields
+            if previous.get(field) != finding.get(field)
+        }
+        if changes:
+            item["changes"] = changes
             changed.append(item)
         else:
             persistent.append(item)

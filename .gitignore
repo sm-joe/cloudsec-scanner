@@ -18,3 +18,4 @@ comparison-report.json
 README.md.1
 stage2-reconciled-report.json
 stage2-report.json
+*.json
