@@ -6,43 +6,77 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cloudsec_scanner.models import Finding, ScanResult, SEVERITY_ORDER
+from cloudsec_scanner.models import SEVERITY_ORDER, ScanResult
 
 
 def _sarif(result: ScanResult) -> dict[str, Any]:
     rules: dict[str, dict[str, Any]] = {}
     results: list[dict[str, Any]] = []
-    level_map = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning", "LOW": "note", "INFO": "note"}
+    level_map = {
+        "CRITICAL": "error",
+        "HIGH": "error",
+        "MEDIUM": "warning",
+        "LOW": "note",
+        "INFO": "note",
+    }
     for finding in result.findings:
-        rules.setdefault(finding.rule_id, {
-            "id": finding.rule_id,
-            "name": finding.title,
-            "shortDescription": {"text": finding.title},
-            "fullDescription": {"text": finding.message},
-            "help": {"text": finding.remediation},
-            "properties": {"severity": finding.severity, "category": finding.category},
-        })
+        rules.setdefault(
+            finding.rule_id,
+            {
+                "id": finding.rule_id,
+                "name": finding.title,
+                "shortDescription": {"text": finding.title},
+                "fullDescription": {"text": finding.message},
+                "help": {"text": finding.remediation},
+                "properties": {"severity": finding.severity, "category": finding.category},
+            },
+        )
         item: dict[str, Any] = {
             "ruleId": finding.rule_id,
             "level": level_map.get(finding.severity, "warning"),
             "message": {"text": finding.message},
-            "locations": [{"physicalLocation": {
-                "artifactLocation": {"uri": finding.path.replace("\\", "/")},
-                "region": {"startLine": finding.line or 1},
-            }}],
-            "properties": {"severity": finding.severity, "remediation": finding.remediation,
-                           "provider": finding.provider, "resource": finding.resource,
-                           "compliance": list(finding.compliance)},
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": finding.path.replace("\\", "/")},
+                        "region": {"startLine": finding.line or 1},
+                    }
+                }
+            ],
+            "properties": {
+                "severity": finding.severity,
+                "remediation": finding.remediation,
+                "provider": finding.provider,
+                "resource": finding.resource,
+                "compliance": list(finding.compliance),
+            },
         }
         if finding.evidence:
             item["properties"]["redactedEvidence"] = finding.evidence
         results.append(item)
-    return {"$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0",
-            "runs": [{"tool": {"driver": {"name": "cloudsec-scanner", "version": "0.1.0",
-                         "rules": list(rules.values())}}, "results": results,
-                      "properties": {"target": result.target, "filesScanned": result.files_scanned,
-                                     "filesSkipped": result.files_skipped, "warnings": result.warnings,
-                                     "errors": result.errors}}]}
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "cloudsec-scanner",
+                        "version": "0.1.0",
+                        "rules": list(rules.values()),
+                    }
+                },
+                "results": results,
+                "properties": {
+                    "target": result.target,
+                    "filesScanned": result.files_scanned,
+                    "filesSkipped": result.files_skipped,
+                    "warnings": result.warnings,
+                    "errors": result.errors,
+                },
+            }
+        ],
+    }
 
 
 def render_json(result: ScanResult) -> str:
@@ -54,14 +88,26 @@ def render_sarif(result: ScanResult) -> str:
 
 
 def render_text(result: ScanResult) -> str:
-    lines = [f"Cloud Security Scanner — {result.target}",
-             f"Files scanned: {result.files_scanned} | skipped: {result.files_skipped} | findings: {len(result.findings)}", ""]
+    lines = [
+        f"Cloud Security Scanner — {result.target}",
+        f"Files scanned: {result.files_scanned} | skipped: {result.files_skipped} | findings: {len(result.findings)}",
+        "",
+    ]
     if not result.findings:
         lines.append("No findings detected by the enabled rules.")
-    for f in sorted(result.findings, key=lambda item: (SEVERITY_ORDER.get(item.severity, 99), item.path, item.line or 0)):
+    for f in sorted(
+        result.findings,
+        key=lambda item: (SEVERITY_ORDER.get(item.severity, 99), item.path, item.line or 0),
+    ):
         location = f"{f.path}:{f.line or 1}"
-        lines.extend([f"[{f.severity}] {f.rule_id} — {f.title}", f"  Location: {location}",
-                      f"  Risk: {f.message}", f"  Fix: {f.remediation}"])
+        lines.extend(
+            [
+                f"[{f.severity}] {f.rule_id} — {f.title}",
+                f"  Location: {location}",
+                f"  Risk: {f.message}",
+                f"  Fix: {f.remediation}",
+            ]
+        )
         if f.resource:
             lines.append(f"  Resource: {f.resource}")
         if f.compliance:

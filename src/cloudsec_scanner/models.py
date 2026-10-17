@@ -19,7 +19,9 @@ class Finding:
     resource: str | None = None
     category: str = "misconfiguration"
     provider: str | None = None
-    remediation: str = "Review the affected configuration and apply the relevant security best practice."
+    remediation: str = (
+        "Review the affected configuration and apply the relevant security best practice."
+    )
     references: tuple[str, ...] = ()
     compliance: tuple[str, ...] = ()
     evidence: str | None = None
@@ -54,10 +56,18 @@ class ScanResult:
                     for severity in SEVERITY_ORDER
                 },
             },
-            "findings": [finding.to_dict() for finding in sorted(
-                self.findings,
-                key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), f.path, f.line or 0, f.rule_id),
-            )],
+            "findings": [
+                finding.to_dict()
+                for finding in sorted(
+                    self.findings,
+                    key=lambda f: (
+                        SEVERITY_ORDER.get(f.severity, 99),
+                        f.path,
+                        f.line or 0,
+                        f.rule_id,
+                    ),
+                )
+            ],
             "warnings": self.warnings,
             "errors": self.errors,
         }

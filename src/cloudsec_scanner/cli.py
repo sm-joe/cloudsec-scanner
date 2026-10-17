@@ -19,18 +19,36 @@ EXIT_ERROR = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="cloudsec", description="Cloud infrastructure and configuration security scanner")
+    parser = argparse.ArgumentParser(
+        prog="cloudsec", description="Cloud infrastructure and configuration security scanner"
+    )
     parser.add_argument("--version", action="version", version=f"cloudsec {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     scan = sub.add_parser("scan", help="scan a file or directory")
     scan.add_argument("target", help="file or directory to scan")
     scan.add_argument("--config", help="YAML configuration file")
     scan.add_argument("--format", choices=("text", "json", "sarif"), default="text")
-    scan.add_argument("--output", help="write report to this path (terminal output is still shown for text format)")
-    scan.add_argument("--severity", choices=tuple(SEVERITY_ORDER), help="override configured failure threshold")
-    scan.add_argument("--scanner", action="append", choices=("iac", "secrets"), help="scanner(s) to enable; repeat to select multiple")
-    scan.add_argument("--fail-on-findings", action="store_true", help="fail when any finding meets the threshold")
-    scan.add_argument("--no-fail", action="store_true", help="always return success for findings (scan errors still fail)")
+    scan.add_argument(
+        "--output",
+        help="write report to this path (terminal output is still shown for text format)",
+    )
+    scan.add_argument(
+        "--severity", choices=tuple(SEVERITY_ORDER), help="override configured failure threshold"
+    )
+    scan.add_argument(
+        "--scanner",
+        action="append",
+        choices=("iac", "secrets", "dependencies"),
+        help="scanner(s) to enable; repeat to select multiple",
+    )
+    scan.add_argument(
+        "--fail-on-findings", action="store_true", help="fail when any finding meets the threshold"
+    )
+    scan.add_argument(
+        "--no-fail",
+        action="store_true",
+        help="always return success for findings (scan errors still fail)",
+    )
     init = sub.add_parser("config-init", help="write a starter YAML configuration")
     init.add_argument("--output", default=".cloudsec.yml", help="configuration file path")
     return parser
@@ -60,7 +78,9 @@ def main(argv: list[str] | None = None) -> int:
         if result.errors:
             return EXIT_ERROR
         threshold = config["severity_threshold"]
-        has_blocking = any(SEVERITY_ORDER.get(f.severity, 99) <= SEVERITY_ORDER[threshold] for f in result.findings)
+        has_blocking = any(
+            SEVERITY_ORDER.get(f.severity, 99) <= SEVERITY_ORDER[threshold] for f in result.findings
+        )
         if args.no_fail:
             return EXIT_OK
         should_fail = args.fail_on_findings or config.get("fail_on_findings", True)

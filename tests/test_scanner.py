@@ -26,7 +26,14 @@ def test_kubernetes_security_context_rules():
     target = ROOT / "fixtures/kubernetes/insecure.yaml"
     result = scan_target(str(target), config_for(target))
     rule_ids = {finding.rule_id for finding in result.findings}
-    assert {"K8S-SEC-001", "K8S-SEC-002", "K8S-SEC-003", "K8S-SEC-004", "K8S-SEC-005", "K8S-SEC-006"} <= rule_ids
+    assert {
+        "K8S-SEC-001",
+        "K8S-SEC-002",
+        "K8S-SEC-003",
+        "K8S-SEC-004",
+        "K8S-SEC-005",
+        "K8S-SEC-006",
+    } <= rule_ids
 
 
 def test_dockerfile_detects_root_default_and_literal_secret_without_leaking_value():
@@ -57,10 +64,9 @@ def test_dockerfile_secret_assignment_is_not_reported_twice():
     target = ROOT / "fixtures/docker/Dockerfile"
     result = scan_target(str(target), config_for(target))
     secret_findings = [
-        finding for finding in result.findings
-        if finding.path == str(target)
-        and finding.line == 2
-        and finding.category == "secrets"
+        finding
+        for finding in result.findings
+        if finding.path == str(target) and finding.line == 2 and finding.category == "secrets"
     ]
     assert [finding.rule_id for finding in secret_findings] == ["DOCKER-003"]
 
@@ -76,4 +82,3 @@ def test_all_supported_fixture_files_are_scanned():
     assert str(target / "docker/Dockerfile") in scanned_paths
     assert str(target / "kubernetes/insecure.yaml") in scanned_paths
     assert str(target / "terraform/insecure.tf") in scanned_paths
-
