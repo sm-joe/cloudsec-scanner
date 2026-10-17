@@ -22,3 +22,8 @@ stage2-report.json
 
 # CI/local scan artifacts
 reports/
+
+# Local SQLite scan history
+*.db
+*.db-shm
+*.db-wal

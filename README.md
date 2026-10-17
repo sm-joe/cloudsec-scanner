@@ -57,6 +57,15 @@ cloudsec scan . --no-fail
 
 # Generate a starter configuration (does not overwrite existing files)
 cloudsec config-init --output .cloudsec.yml
+
+# Inspect local scan history
+cloudsec history list --limit 20
+cloudsec history show 1
+cloudsec history trends --days 30
+
+# Use an explicit SQLite database for repeatable automation
+cloudsec scan . --history-db .cloudsec/history.db
+cloudsec history list --database .cloudsec/history.db
 ```
 
 The command prints findings and returns:
@@ -173,6 +182,50 @@ python scripts/ci_gate.py reports/comparison.json --severity HIGH
 
 Replace `<baseline-directory>` with a checkout or working tree of the target/base revision. The CI helper consumes the JSON output of `cloudsec compare`; it does not accept SARIF as comparison input.
 
+## Stage 9 — Scan history and security trends
+
+Every `cloudsec scan` and `cloudsec image` run is recorded locally in a SQLite database by default. The history stores scan metadata, severity counts, warnings/errors, the normalized findings from the report, and lifecycle changes compared with the most recent **complete** scan of the same target and scan type.
+
+The default database is outside the repository:
+- Windows: `%LOCALAPPDATA%\CloudSecScanner\history.db`
+- macOS: `~/Library/Application Support/CloudSecScanner/history.db`
+- Linux: `$XDG_STATE_HOME/cloudsec-scanner/history.db`, or `~/.local/state/cloudsec-scanner/history.db` when `XDG_STATE_HOME` is unset.
+
+Set `CLOUDSEC_HISTORY_DB` to override the default for a shell/session, or use `--history-db` on `scan`/`image`. Use `--no-history` to run a scan without recording it. History database paths can also be passed to the history subcommands using `--database`.
+
+```powershell
+# Scan and record the run in the default database
+cloudsec scan .
+
+# Choose a repository-local or dedicated database explicitly
+cloudsec scan . --history-db .cloudsec/history.db
+
+# List the most recent runs; filter by exact target if needed
+cloudsec history list --limit 20
+cloudsec history list --target . --format json --database .cloudsec/history.db
+
+# Inspect a run by the ID shown in history list
+cloudsec history show 3
+
+# Review scans from the last 30 days
+cloudsec history trends --days 30
+cloudsec history trends --days 90 --target . --format json
+
+# Scan without storing the result
+cloudsec scan . --no-history
+```
+
+History commands:
+- `cloudsec history list` shows recent runs, severity counts, and lifecycle totals.
+- `cloudsec history show RUN_ID` shows the stored scan metadata and findings.
+- `cloudsec history trends --days N` returns time-ordered scan summaries for the selected time window. JSON output is suitable for downstream charts or reporting.
+- `--target` filters by the exact target string used by the scan command; use the same target spelling consistently for useful lifecycle comparisons.
+- An incomplete scan (one that reports scan errors) is retained for auditability but is not used as the baseline for the next lifecycle comparison, avoiding false “resolved” counts caused by an incomplete scan.
+- Lifecycle identity reuses Stage 6's stable `finding_identity`; changes to severity, title, message, remediation, or resource are tracked as changed findings. Severity increases are counted separately.
+- History is local to the machine/database and is not automatically uploaded to CI artifacts. In ephemeral CI runners, the database is ephemeral unless the workflow explicitly persists it.
+
+The database contains scan findings and may contain file paths or redacted evidence from the report. Keep it in an appropriately protected location. The scanner's secret-detection evidence is redacted, but findings should still be treated as security-sensitive metadata.
+
 ## Architecture
 
 ```text
@@ -183,6 +236,7 @@ src/cloudsec_scanner/
   scanner.py      scan orchestration and initial native checks
   models.py       normalized finding and scan-result schema
   report.py       terminal, JSON, SARIF output
+  history.py      SQLite scan history, lifecycle summaries, trend queries
   rules/          provider-specific rule implementations
 scripts/ci_gate.py comparison-based CI regression gate
     common.py     shared rule helpers and finding construction
@@ -199,7 +253,7 @@ Each finding includes a stable rule ID, title, severity, message, path, best-eff
 
 ## Implemented vs planned
 
-**Implemented in this MVP:** Python package and CLI; file/directory discovery; Terraform pattern-based rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; stable JSON report comparison; comparison-based CI gate for new findings and severity escalations; GitHub Actions test, scan, report artifact, and SARIF publication workflow.
+**Implemented in this MVP:** Python package and CLI; file/directory discovery; Terraform pattern-based rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; stable JSON report comparison; comparison-based CI gate for new findings and severity escalations; GitHub Actions test, scan, report artifact, and SARIF publication workflow; local SQLite scan history and lifecycle/trend commands.
 
 **Not yet implemented:** comprehensive Azure/GCP rule coverage; full CIS benchmark coverage; robust HCL/Helm template parsing; complete CloudFormation resource/property coverage; broad secret entropy/context analysis; dependency manifest and lockfile SCA; OSV database update command; container image scanning; external scanner adapters; policy exceptions with expiry; loadable third-party rule packs; full SARIF schema validation and extensive integration/regression coverage.
 
@@ -207,7 +261,7 @@ Each finding includes a stable rule ID, title, severity, message, path, best-eff
 
 ```bash
 python -m pytest -q
-python -m compileall -q src
+python -m compileall -q src scripts tests
 ruff check src tests scripts
 ```
 

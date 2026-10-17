@@ -17,6 +17,14 @@ from cloudsec_scanner.comparison import (
     render_comparison_text,
 )
 from cloudsec_scanner.image_scan import ImageScanError, scan_image
+from cloudsec_scanner.history import (
+    HistoryError,
+    default_history_db_path,
+    get_scan,
+    get_trends,
+    list_scans,
+    record_scan,
+)
 from cloudsec_scanner.models import SEVERITY_ORDER
 from cloudsec_scanner.report import write_report
 from cloudsec_scanner.scanner import scan_target
@@ -68,6 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("iac", "secrets", "dependencies"),
         help="scanner(s) to enable; repeat to select multiple",
     )
+    scan.add_argument("--no-history", action="store_true", help="do not persist this scan in local history")
+    scan.add_argument("--history-db", help="SQLite history database path (overrides the default)")
     _add_report_options(scan)
 
     image = sub.add_parser("image", help="scan a built container image using Trivy")
@@ -77,7 +87,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout", type=int, default=900, help="scan timeout in seconds (default: 900)"
     )
     image.add_argument("--config", help="YAML configuration file (failure threshold only)")
+    image.add_argument("--no-history", action="store_true", help="do not persist this scan in local history")
+    image.add_argument("--history-db", help="SQLite history database path (overrides the default)")
     _add_report_options(image)
+
+    history = sub.add_parser("history", help="inspect persistent scan history and trends")
+    history_actions = history.add_subparsers(dest="history_action", required=True)
+
+    history_list = history_actions.add_parser("list", help="list recent scan runs")
+    history_list.add_argument("--database", help="SQLite history database path")
+    history_list.add_argument("--limit", type=int, default=20, help="number of runs to show (1-1000)")
+    history_list.add_argument("--target", help="filter by exact scan target")
+    history_list.add_argument("--format", choices=("text", "json"), default="text")
+
+    history_show = history_actions.add_parser("show", help="show one scan run and its findings")
+    history_show.add_argument("run_id", type=int, help="scan run ID from history list")
+    history_show.add_argument("--database", help="SQLite history database path")
+    history_show.add_argument("--format", choices=("text", "json"), default="text")
+
+    history_trends = history_actions.add_parser("trends", help="show scan posture trends over time")
+    history_trends.add_argument("--database", help="SQLite history database path")
+    history_trends.add_argument("--days", type=int, default=30, help="history window in days (1-3650)")
+    history_trends.add_argument("--target", help="filter by exact scan target")
+    history_trends.add_argument("--format", choices=("text", "json"), default="text")
 
     compare = sub.add_parser(
         "compare", help="compare two JSON scan reports using stable finding identities"
@@ -103,7 +135,7 @@ def _apply_policy(result, config) -> None:
     ]
 
 
-def _finish_report(result, args, config) -> int:
+def _finish_report(result, args, config, scan_type: str) -> int:
     _apply_policy(result, config)
 
     baseline_gate = bool(args.fail_on_new or config.get("fail_on_new_findings", False))
@@ -125,6 +157,21 @@ def _finish_report(result, args, config) -> int:
     rendered = write_report(result, args.format, args.output)
     if args.format == "text" or not args.output:
         print(rendered, end="")
+
+    if not args.no_history:
+        try:
+            history_record = record_scan(
+                default_history_db_path(args.history_db), result, scan_type=scan_type
+            )
+            print(
+                f"Scan history: run #{history_record['id']} "
+                f"({history_record['lifecycle']['status']})",
+                file=sys.stderr,
+            )
+        except HistoryError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
     if result.errors:
         return EXIT_ERROR
 
@@ -156,6 +203,110 @@ def _finish_report(result, args, config) -> int:
     return EXIT_FINDINGS if should_fail and has_blocking else EXIT_OK
 
 
+def _history_summary(record: dict) -> dict:
+    """Return compact metadata for history list/trend output."""
+    lifecycle = record.get("lifecycle", {})
+    lifecycle_summary = {
+        key: lifecycle.get(key)
+        for key in (
+            "status",
+            "new_count",
+            "resolved_count",
+            "persistent_count",
+            "changed_count",
+            "severity_escalation_count",
+        )
+    }
+    return {
+        "id": record["id"],
+        "scanned_at": record["scanned_at"],
+        "target": record["target"],
+        "scan_type": record["scan_type"],
+        "files_scanned": record["files_scanned"],
+        "files_skipped": record["files_skipped"],
+        "finding_count": record["finding_count"],
+        "severity_counts": record["severity_counts"],
+        "lifecycle": lifecycle_summary,
+        "complete": record["complete"],
+    }
+
+
+def _render_history_text(records: list[dict], heading: str) -> str:
+    lines = [heading]
+    if not records:
+        lines.append("No scan history found for the selected filters.")
+        return "\n".join(lines) + "\n"
+    for record in records:
+        lifecycle = record.get("lifecycle", {})
+        status = lifecycle.get("status", "unknown")
+        if status == "complete":
+            change_text = (
+                f"new={lifecycle.get('new_count', 0)}, "
+                f"resolved={lifecycle.get('resolved_count', 0)}, "
+                f"changed={lifecycle.get('changed_count', 0)}"
+            )
+        elif status == "initial":
+            change_text = "initial baseline (no previous complete scan)"
+        else:
+            change_text = "lifecycle unavailable (incomplete scan)"
+        counts = record.get("severity_counts", {})
+        severity_text = " ".join(
+            f"{severity}={counts.get(severity, 0)}"
+            for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO")
+        )
+        lines.append(
+            f"#{record['id']} {record['scanned_at']} [{record['scan_type']}] "
+            f"{record['target']}"
+        )
+        lines.append(
+            f"  findings={record['finding_count']} | {severity_text} | {change_text}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _run_history_command(args) -> int:
+    database = default_history_db_path(args.database)
+    if args.history_action == "list":
+        records = list_scans(database, limit=args.limit, target=args.target)
+        payload = [_history_summary(record) for record in records]
+        rendered = (
+            json.dumps(payload, indent=2) + "\n"
+            if args.format == "json"
+            else _render_history_text(records, "CloudSec Scan History")
+        )
+    elif args.history_action == "show":
+        record = get_scan(database, args.run_id)
+        if args.format == "json":
+            rendered = json.dumps(record, indent=2) + "\n"
+        else:
+            rendered = _render_history_text([record], f"CloudSec Scan Run #{record['id']}")
+            if record["findings"]:
+                rendered += "\nFindings\n"
+                for finding in record["findings"]:
+                    rendered += (
+                        f"  [{finding.get('severity', 'INFO')}] "
+                        f"{finding.get('rule_id', 'UNKNOWN-RULE')} — "
+                        f"{finding.get('title', 'Untitled finding')} "
+                        f"({finding.get('path', '')}:{finding.get('line') or 1})\n"
+                    )
+            if record["errors"]:
+                rendered += "\nErrors\n" + "\n".join(
+                    f"  {error}" for error in record["errors"]
+                ) + "\n"
+    else:
+        records = get_trends(database, days=args.days, target=args.target)
+        payload = [_history_summary(record) for record in records]
+        rendered = (
+            json.dumps(payload, indent=2) + "\n"
+            if args.format == "json"
+            else _render_history_text(
+                records, f"CloudSec Security Trends — last {args.days} days"
+            )
+        )
+    print(rendered, end="")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -174,6 +325,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.format == "text" or not args.output:
                 print(rendered, end="")
             return EXIT_OK
+
+        if args.command == "history":
+            return _run_history_command(args)
 
         if args.command == "config-init":
             if Path(args.output).exists():
@@ -195,7 +349,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.scanner:
                 config["scanners"] = args.scanner
             result = scan_target(args.target, config)
-        return _finish_report(result, args, config)
+        return _finish_report(result, args, config, scan_type=args.command)
+    except HistoryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_INPUT
     except (ImageScanError, ComparisonError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
