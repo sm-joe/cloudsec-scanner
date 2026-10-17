@@ -44,13 +44,13 @@ jobs:
       - name: Scan Current Revision (JSON)
         id: scan_json
         continue-on-error: true
-        run: cloudsec scan . --format json --output reports/current.json --no-fail
+        run: cloudsec scan . --config .cloudsec-ci.yml --format json --output reports/current.json --no-fail
 
       - name: Scan Current Revision (SARIF)
         id: scan_sarif
         if: always()
         continue-on-error: true
-        run: cloudsec scan . --format sarif --output reports/current.sarif --no-fail
+        run: cloudsec scan . --config .cloudsec-ci.yml --format sarif --output reports/current.sarif --no-fail
 
       - name: Resolve Baseline Revision
         id: baseline
@@ -93,7 +93,7 @@ jobs:
         id: scan_baseline
         if: always() && steps.baseline.outputs.available == 'true' && steps.checkout_baseline.outcome == 'success'
         continue-on-error: true
-        run: cloudsec scan baseline-repo --format json --output reports/baseline.json --no-fail
+        run: cloudsec scan baseline-repo --config .cloudsec-ci.yml --format json --output reports/baseline.json --no-fail
 
       - name: Compare Baseline with Current Scan
         id: compare
