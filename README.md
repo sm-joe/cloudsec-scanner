@@ -139,9 +139,39 @@ The original CloudFormation public-read starter rule is `AWS-CF-001`. Additional
 
 These are targeted starter checks, not exhaustive provider coverage or a certification of compliance. Some rules intentionally flag only explicit insecure values; absence of a property is not always proof of a secure or insecure effective configuration.
 
-## GitHub Actions
+## GitHub Actions — Stage 8
 
-`.github/workflows/cloudsec.yml` runs on pushes and pull requests, creates a SARIF report, uploads it to GitHub code scanning, and fails the job for findings at or above High severity. Enable code scanning in repository settings where required. The workflow uses only read access to repository contents plus `security-events: write` for SARIF upload; no cloud credentials are needed for static local-file scanning.
+`.github/workflows/cloudsec.yml` runs on pull requests, pushes to `main`/`master`, and manual dispatch. It installs the package with development dependencies, runs Ruff and the test suite, and generates JSON and SARIF reports.
+
+For pull requests and commits with a usable parent revision, the workflow also:
+
+1. Checks out the target/base revision into `baseline-repo`.
+2. Scans that revision to create `reports/baseline.json`.
+3. Scans the current revision to create `reports/current.json` and `reports/current.sarif`.
+4. Runs `cloudsec compare` and applies `scripts/ci_gate.py` to the comparison report.
+5. Fails the regression gate for new HIGH/CRITICAL findings or an existing finding whose severity escalates to HIGH/CRITICAL. Existing findings and severity downgrades do not fail this regression gate.
+6. Uploads JSON/SARIF/comparison reports as a workflow artifact. SARIF is also submitted to GitHub Code Scanning when repository permissions and code-scanning availability permit it.
+
+The baseline scan uses the scanner version from the current revision, so the comparison focuses on target findings rather than differences between scanner versions. A first commit without a parent cannot be compared; that run still tests and scans the current revision, but has no baseline regression gate. Scanner execution errors, failed tests/lint, baseline checkout/scan errors, comparison errors, and gate violations fail the workflow. SARIF publication itself is best-effort; the report artifact remains available if publishing is unavailable.
+
+The workflow requires `contents: read`, `pull-requests: read`, and `security-events: write`. No cloud credentials are needed for local file scanning. After the first successful run, configure the repository's branch protection/ruleset to require the **Test and scan** status check; workflow files do not enable branch protection by themselves.
+
+The regression threshold defaults to `HIGH`. To include MEDIUM findings, change the gate step to `python scripts/ci_gate.py reports/comparison.json --severity MEDIUM`.
+
+### Reproduce the regression gate locally
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m pytest -q
+ruff check src tests scripts
+New-Item -ItemType Directory -Force reports | Out-Null
+cloudsec scan . --format json --output reports/current.json --no-fail
+cloudsec scan <baseline-directory> --format json --output reports/baseline.json --no-fail
+cloudsec compare reports/baseline.json reports/current.json --format json --output reports/comparison.json
+python scripts/ci_gate.py reports/comparison.json --severity HIGH
+```
+
+Replace `<baseline-directory>` with a checkout or working tree of the target/base revision. The CI helper consumes the JSON output of `cloudsec compare`; it does not accept SARIF as comparison input.
 
 ## Architecture
 
@@ -153,7 +183,8 @@ src/cloudsec_scanner/
   scanner.py      scan orchestration and initial native checks
   models.py       normalized finding and scan-result schema
   report.py       terminal, JSON, SARIF output
-  rules/
+  rules/          provider-specific rule implementations
+scripts/ci_gate.py comparison-based CI regression gate
     common.py     shared rule helpers and finding construction
     aws.py        AWS CloudFormation and IAM checks
     azure.py      Azure ARM checks
@@ -168,7 +199,7 @@ Each finding includes a stable rule ID, title, severity, message, path, best-eff
 
 ## Implemented vs planned
 
-**Implemented in this MVP:** Python package and CLI; file/directory discovery; Terraform pattern-based rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; unit tests; GitHub Actions workflow.
+**Implemented in this MVP:** Python package and CLI; file/directory discovery; Terraform pattern-based rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; stable JSON report comparison; comparison-based CI gate for new findings and severity escalations; GitHub Actions test, scan, report artifact, and SARIF publication workflow.
 
 **Not yet implemented:** comprehensive Azure/GCP rule coverage; full CIS benchmark coverage; robust HCL/Helm template parsing; complete CloudFormation resource/property coverage; broad secret entropy/context analysis; dependency manifest and lockfile SCA; OSV database update command; container image scanning; external scanner adapters; policy exceptions with expiry; loadable third-party rule packs; full SARIF schema validation and extensive integration/regression coverage.
 
@@ -177,7 +208,7 @@ Each finding includes a stable rule ID, title, severity, message, path, best-eff
 ```bash
 python -m pytest -q
 python -m compileall -q src
-ruff check src tests
+ruff check src tests scripts
 ```
 
 ## Adding rules
