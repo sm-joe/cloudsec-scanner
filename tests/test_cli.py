@@ -28,3 +28,81 @@ def test_config_init_refuses_overwrite(tmp_path):
     target = tmp_path / ".cloudsec.yml"
     target.write_text("existing", encoding="utf-8")
     assert main(["config-init", "--output", str(target)]) == EXIT_INPUT
+
+
+
+def test_baseline_gate_allows_persistent_findings(tmp_path):
+    target = ROOT / "fixtures/terraform/insecure.tf"
+    baseline = tmp_path / "baseline.json"
+    first_output = tmp_path / "baseline-scan.json"
+
+    assert main(
+        ["scan", str(target), "--format", "json", "--output", str(first_output)]
+    ) == EXIT_FINDINGS
+    baseline.write_text(first_output.read_text(encoding="utf-8"), encoding="utf-8")
+
+    assert main(
+        [
+            "scan",
+            str(target),
+            "--baseline",
+            str(baseline),
+            "--fail-on-new",
+            "--format",
+            "json",
+        ]
+    ) == EXIT_OK
+
+
+def test_baseline_gate_fails_for_new_blocking_findings(tmp_path):
+    target = ROOT / "fixtures/terraform/insecure.tf"
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps({"target": str(target), "findings": []}), encoding="utf-8")
+
+    assert main(
+        [
+            "scan",
+            str(target),
+            "--baseline",
+            str(baseline),
+            "--fail-on-new",
+            "--format",
+            "json",
+        ]
+    ) == EXIT_FINDINGS
+
+
+def test_severity_override_changes_report_and_gate(tmp_path):
+    target = ROOT / "fixtures/terraform/insecure.tf"
+    config = tmp_path / ".cloudsec.yml"
+    output = tmp_path / "report.json"
+    config.write_text(
+        "severity_threshold: HIGH\n"
+        "severity_overrides:\n"
+        "  AWS-TF-001: LOW\n",
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "scan",
+            str(target),
+            "--config",
+            str(config),
+            "--format",
+            "json",
+            "--output",
+            str(output),
+        ]
+    )
+
+    report = json.loads(output.read_text(encoding="utf-8"))
+    overridden = [item for item in report["findings"] if item["rule_id"] == "AWS-TF-001"]
+    assert overridden
+    assert all(item["severity"] == "LOW" for item in overridden)
+    assert code == EXIT_FINDINGS  # Other HIGH findings still block.
+
+
+def test_fail_on_new_requires_baseline(tmp_path):
+    target = ROOT / "fixtures/terraform/insecure.tf"
+    assert main(["scan", str(target), "--fail-on-new"]) == EXIT_INPUT

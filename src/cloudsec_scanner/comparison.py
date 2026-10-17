@@ -90,10 +90,11 @@ def _read_report(path: str | Path) -> tuple[dict[str, Any], dict[str, dict[str, 
     return document, indexed
 
 
-def compare_reports(baseline_path: str | Path, current_path: str | Path) -> dict[str, Any]:
-    """Compare current scan findings against a previous JSON scan report."""
-    baseline_doc, baseline = _read_report(baseline_path)
-    current_doc, current = _read_report(current_path)
+def compare_report_documents(
+    baseline_doc: dict[str, Any], current_doc: dict[str, Any]
+) -> dict[str, Any]:
+    """Compare two already-loaded CloudSec JSON report documents."""
+    baseline, current = _index_report_findings(baseline_doc), _index_report_findings(current_doc)
 
     new: list[dict[str, Any]] = []
     resolved: list[dict[str, Any]] = []
@@ -159,6 +160,32 @@ def compare_reports(baseline_path: str | Path, current_path: str | Path) -> dict
         "persistent": persistent,
         "changed": changed,
     }
+
+
+
+def _index_report_findings(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    findings = document.get("findings")
+    if not isinstance(findings, list):
+        raise ComparisonError("report must be a cloudsec JSON report with a findings array; SARIF is not supported")
+    indexed: dict[str, dict[str, Any]] = {}
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        identity = finding_identity(item)
+        if identity in indexed:
+            suffix = 2
+            while f"{identity}:{suffix}" in indexed:
+                suffix += 1
+            identity = f"{identity}:{suffix}"
+        indexed[identity] = item
+    return indexed
+
+
+def compare_reports(baseline_path: str | Path, current_path: str | Path) -> dict[str, Any]:
+    """Compare current scan findings against a previous JSON scan report."""
+    baseline_doc, _ = _read_report(baseline_path)
+    current_doc, _ = _read_report(current_path)
+    return compare_report_documents(baseline_doc, current_doc)
 
 
 def render_comparison_text(comparison: dict[str, Any]) -> str:

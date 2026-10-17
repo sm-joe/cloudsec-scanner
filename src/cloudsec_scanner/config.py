@@ -20,6 +20,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "exclude_rules": [],
     "severity_threshold": "HIGH",
     "fail_on_findings": True,
+    "fail_on_new_findings": False,
+    "severity_overrides": {},
     "max_file_bytes": 2 * 1024 * 1024,
     "scanners": ["iac", "secrets"],
 }
@@ -72,6 +74,22 @@ def _validate_config(config: dict[str, Any]) -> dict[str, Any]:
 
     if not isinstance(config["fail_on_findings"], bool):
         raise ValueError("fail_on_findings must be a boolean")
+    if not isinstance(config["fail_on_new_findings"], bool):
+        raise ValueError("fail_on_new_findings must be a boolean")
+
+    overrides = config["severity_overrides"]
+    if not isinstance(overrides, dict):
+        raise ValueError("severity_overrides must be a mapping of rule IDs to severities")
+    normalized_overrides: dict[str, str] = {}
+    for rule_id, severity in overrides.items():
+        if not isinstance(rule_id, str) or not rule_id.strip():
+            raise ValueError("severity_overrides keys must be non-empty rule IDs")
+        if not isinstance(severity, str) or severity.upper() not in ALLOWED_SEVERITIES:
+            raise ValueError(
+                "severity_overrides values must be CRITICAL, HIGH, MEDIUM, LOW, or INFO"
+            )
+        normalized_overrides[rule_id] = severity.upper()
+    config["severity_overrides"] = normalized_overrides
 
     max_file_bytes = config["max_file_bytes"]
     if isinstance(max_file_bytes, bool) or not isinstance(max_file_bytes, int):

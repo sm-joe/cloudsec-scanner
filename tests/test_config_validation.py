@@ -128,3 +128,37 @@ def test_non_mapping_configuration_root_is_rejected(tmp_path, contents):
 def test_missing_configuration_file_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="does not exist"):
         load_config(str(tmp_path / "missing.yml"))
+
+
+
+@pytest.mark.parametrize(
+    "value",
+    [1, "true", None],
+)
+def test_fail_on_new_findings_must_be_boolean(tmp_path, value):
+    path = write_config(tmp_path, {"fail_on_new_findings": value})
+    with pytest.raises(ValueError, match="fail_on_new_findings"):
+        load_config(path)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        [],
+        {"": "HIGH"},
+        {"AWS-TF-001": "URGENT"},
+        {"AWS-TF-001": 1},
+    ],
+)
+def test_invalid_severity_overrides_are_rejected(tmp_path, overrides):
+    path = write_config(tmp_path, {"severity_overrides": overrides})
+    with pytest.raises(ValueError, match="severity_overrides"):
+        load_config(path)
+
+
+def test_severity_overrides_are_normalized(tmp_path):
+    path = write_config(
+        tmp_path,
+        {"severity_overrides": {"AWS-TF-001": "critical"}},
+    )
+    assert load_config(path)["severity_overrides"] == {"AWS-TF-001": "CRITICAL"}

@@ -5,11 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from cloudsec_scanner import __version__
 from cloudsec_scanner.config import load_config, write_default_config
-from cloudsec_scanner.comparison import ComparisonError, compare_reports, render_comparison_text
+from cloudsec_scanner.comparison import (
+    ComparisonError,
+    compare_report_documents,
+    compare_reports,
+    render_comparison_text,
+)
 from cloudsec_scanner.image_scan import ImageScanError, scan_image
 from cloudsec_scanner.models import SEVERITY_ORDER
 from cloudsec_scanner.report import write_report
@@ -29,6 +35,15 @@ def _add_report_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--fail-on-findings", action="store_true", help="fail when any finding meets the threshold"
+    )
+    parser.add_argument(
+        "--baseline",
+        help="previous CloudSec JSON report; use with --fail-on-new for baseline-aware gating",
+    )
+    parser.add_argument(
+        "--fail-on-new",
+        action="store_true",
+        help="fail only when new findings meet the configured severity threshold (requires --baseline)",
     )
     parser.add_argument(
         "--no-fail",
@@ -77,15 +92,63 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_policy(result, config) -> None:
+    """Apply configured rule exclusions and severity overrides to scan findings."""
+    excluded = set(config.get("exclude_rules", []))
+    overrides = config.get("severity_overrides", {})
+    result.findings = [
+        replace(finding, severity=overrides.get(finding.rule_id, finding.severity))
+        for finding in result.findings
+        if finding.rule_id not in excluded
+    ]
+
+
 def _finish_report(result, args, config) -> int:
+    _apply_policy(result, config)
+
+    baseline_gate = bool(args.fail_on_new or config.get("fail_on_new_findings", False))
+    if baseline_gate and not args.baseline:
+        raise ValueError("baseline-aware gating requires --baseline when --fail-on-new is enabled")
+
+    comparison = None
+    if args.baseline:
+        try:
+            baseline_doc = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ComparisonError(f"could not read baseline report {args.baseline}: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ComparisonError(f"baseline report {args.baseline} is not valid JSON: {exc}") from exc
+        if not isinstance(baseline_doc, dict):
+            raise ComparisonError("baseline report must contain a JSON object")
+        comparison = compare_report_documents(baseline_doc, result.to_dict())
+
     rendered = write_report(result, args.format, args.output)
     if args.format == "text" or not args.output:
         print(rendered, end="")
     if result.errors:
         return EXIT_ERROR
+
     threshold = config["severity_threshold"]
+    threshold_order = SEVERITY_ORDER[threshold]
+    if baseline_gate and not args.no_fail:
+        assert comparison is not None
+        blocking_findings = [
+            item
+            for item in comparison["new"]
+            if SEVERITY_ORDER.get(
+                str(item["finding"].get("severity", "INFO")).upper(), 99
+            )
+            <= threshold_order
+        ]
+        print(
+            f"Baseline gate: {len(comparison['new'])} new finding(s); "
+            f"{len(blocking_findings)} meet the {threshold} failure threshold.",
+            file=sys.stderr,
+        )
+        return EXIT_FINDINGS if blocking_findings else EXIT_OK
+
     has_blocking = any(
-        SEVERITY_ORDER.get(f.severity, 99) <= SEVERITY_ORDER[threshold] for f in result.findings
+        SEVERITY_ORDER.get(f.severity, 99) <= threshold_order for f in result.findings
     )
     if args.no_fail:
         return EXIT_OK
