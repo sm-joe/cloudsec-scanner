@@ -1,0 +1,14 @@
+exclude:
+  - ".git/**"
+  - ".venv/**"
+  - "venv/**"
+  - "node_modules/**"
+  - "dist/**"
+  - "build/**"
+exclude_rules: []
+severity_threshold: HIGH
+fail_on_findings: true
+max_file_bytes: 2097152
+scanners:
+  - iac
+  - secrets
