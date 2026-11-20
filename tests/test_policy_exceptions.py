@@ -15,7 +15,7 @@ def fixture():
 
 
 def entry(result, expires="2030-01-01"):
-    return {"finding_id": result.to_dict()["findings"][0]["finding_id"], "expires": expires, "reason": "Approved temporary risk", "approved_by": "reviewer"}
+    return {"finding_id": result.to_dict()["findings"][0]["finding_id"], "expires": expires, "reason": "Approved temporary risk", "approved_by": "reviewer", "approved_severity": "HIGH"}
 
 
 def test_accepted_exception_keeps_finding():
@@ -62,7 +62,7 @@ def test_invalid_exception_documents(tmp_path, modify):
     else:
         record["expires"] = "forever"
     path = tmp_path / "exceptions.yaml"
-    path.write_text(yaml.safe_dump({"version": 1, "exceptions": entries}))
+    path.write_text(yaml.safe_dump({"version": 2, "exceptions": entries}))
     with pytest.raises(ValueError):
         load_exceptions(path)
 
@@ -74,9 +74,9 @@ def test_cli_exception_controls_exit_not_evidence(tmp_path):
     arguments = ["scan", str(source), "--scanner", "iac", "--no-history", "--format", "json", "--output", str(output)]
     assert main(arguments) == 1
     before = json.loads(output.read_text())
-    record = {"finding_id": before["findings"][0]["finding_id"], "expires": "2099-01-01", "reason": "Temporary risk", "approved_by": "reviewer"}
+    record = {"finding_id": before["findings"][0]["finding_id"], "expires": "2099-01-01", "reason": "Temporary risk", "approved_by": "reviewer", "approved_severity": "HIGH"}
     policy = tmp_path / "exceptions.yaml"
-    policy.write_text(yaml.safe_dump({"version": 1, "exceptions": [record]}))
+    policy.write_text(yaml.safe_dump({"version": 2, "exceptions": [record]}))
     assert main(arguments + ["--exceptions", str(policy)]) == 0
     after = json.loads(output.read_text())
     assert after["findings"] == before["findings"]

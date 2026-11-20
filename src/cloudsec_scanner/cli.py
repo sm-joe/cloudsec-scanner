@@ -125,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     cloud.add_argument("provider", choices=("aws",))
     cloud.add_argument("--region", action="append", required=True, help="AWS region; repeat to scan multiple regions")
     cloud.add_argument("--output", help="output inventory JSON path")
+    cloud.add_argument("--redact-identifiers", action="store_true", help="pseudonymize account and resource identifiers in exported AWS inventory")
     cloud.add_argument("--no-fail", action="store_true", help="ignore findings exit code, not collection errors")
 
     sbom = sub.add_parser("sbom", help="export resolved dependency inventory as CycloneDX JSON")
@@ -200,6 +201,10 @@ def _finish_report(result, args, config, scan_type: str) -> int:
     threshold_order = SEVERITY_ORDER[threshold]
     if baseline_gate and not args.no_fail:
         assert comparison is not None
+        revoked = {entry["finding_id"] for entry in result.exceptions if entry["status"] in {"EXPIRED", "AMBIGUOUS", "SEVERITY_ESCALATED", "REVIEW_REQUIRED"}}
+        # A formerly accepted baseline finding must not become permanently exempt.
+        if baseline_doc is not None:
+            revoked.update(entry["finding_id"] for entry in baseline_doc.get("exceptions", []) if isinstance(entry, dict) and entry.get("status") == "ACCEPTED" and isinstance(entry.get("finding_id"), str) and entry["finding_id"] not in accepted)
         blocking_findings = [
             item
             for item in comparison["new"] + [entry for entry in comparison["changed"] if SEVERITY_ORDER[entry["current_severity"]] < SEVERITY_ORDER[entry["previous_severity"]]]
@@ -208,6 +213,10 @@ def _finish_report(result, args, config, scan_type: str) -> int:
             )
             <= threshold_order
         ]
+        from cloudsec_scanner.comparison import finding_identity, _relative_finding
+        if any(finding_identity(_relative_finding(f.to_dict(), {"target": result.target})) in revoked and SEVERITY_ORDER[f.severity] <= threshold_order for f in result.findings):
+            print("Baseline gate: a current blocking finding has a revoked or invalid exception.", file=sys.stderr)
+            return EXIT_FINDINGS
         print(
             f"Baseline gate: {len(comparison['new'])} new finding(s); "
             f"{len(blocking_findings)} meet the {threshold} failure threshold.",
@@ -338,6 +347,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "cloud":
             from cloudsec_scanner.providers.aws import scan_aws
             inventory = scan_aws(args.region)
+            if args.redact_identifiers:
+                from cloudsec_scanner.providers.aws import redact_inventory
+                inventory = redact_inventory(inventory)
             rendered = json.dumps(inventory.to_dict(), indent=2) + "\n"
             if args.output:
                 output = Path(args.output)

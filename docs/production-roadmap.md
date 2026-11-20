@@ -22,3 +22,5 @@ P0 alias deduplication and external scanner integrity plus initial P1 image prov
 PR #10 merged: alias deduplication, bounded Trivy and image provenance. Next increment adds native resource assessment records, full identifiers, AWS asset metrics and added IaC predicates. Remaining coverage gaps include complete field/type validation and manifest formats. Fingerprint migration, privacy, schema validation, licensing and artifact attestation remain separate release gates.
 
 PR #11 merged after all three workflows passed (240 tests). License and artifact checks are the next increment; signed candidate provenance is subject to main-branch execution and verification. Full schema validation, dependency audit, privacy, identity migration and remaining scanner acceptance are still open.
+
+PRs #12 and #13 merged: licensing, candidate artifact checks, main provenance verified for #12, offline report schemas and fingerprint v2. Final integrity increment addresses remaining cloud privacy, pagination and exception escalation. Stable release remains gated on verification and documented support scope.

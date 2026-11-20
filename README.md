@@ -326,7 +326,7 @@ cloudsec scan infrastructure/ --format json --output report.json --no-history
 cloudsec scan infrastructure/ --exceptions reviewed-exceptions.yaml --no-history
 ```
 
-The exception document uses version: 1 and an exceptions list. Every record requires finding_id (64 lowercase hex characters), expires (ISO date), reason and approved_by. Review exceptions in source control and protect policy changes through repository controls. The repository regression gate intentionally evaluates raw findings independently of CLI exceptions.
+The exception document uses version: 2 and an exceptions list. Every record requires finding_id (64 lowercase hex characters), expires (ISO date), reason, approved_by and approved_severity (CRITICAL, HIGH, MEDIUM, LOW or INFO). Legacy v1 policies must be reviewed and regenerated. Severity escalation invalidates approval; revoked or expired exceptions cannot silently persist through a baseline gate. Review exceptions in source control and protect policy changes through repository controls. The repository regression gate intentionally evaluates raw findings independently of CLI exceptions.
 
 
 ### Production hardening and portability
@@ -365,3 +365,6 @@ CloudSec Scanner is licensed under [Apache-2.0](LICENSE). Release candidate arch
 ### Report compatibility and privacy
 
 Reports carry fingerprint_version: 2 and include full native resource IDs in fingerprint calculations. Regenerate pre-v2 baselines and re-review exception IDs; older fingerprint versions are rejected rather than silently matched. Use cloudsec scan TARGET --relative-paths --no-history to minimize local filesystem path disclosure in exported JSON, SARIF or text. This option does not anonymize cloud identifiers, resource names, advisory metadata or arbitrary diagnostic content. Do not publish sensitive reports without review. CI validates native reports against repository-pinned JSON, SARIF 2.1.0 and CycloneDX 1.6 schemas offline.
+
+
+AWS report sharing: cloudsec cloud aws --region us-east-1 --redact-identifiers --output aws-share.json. Account and asset identifiers are replaced by per-report HMAC pseudonyms; related findings remain joinable within the report. Regions, service types, posture and severities remain visible. The key is not exported; pseudonymized reports are not reproducible or suitable as cross-run baselines. OSV batch pagination follows per-package continuation tokens, rejects repetitions and enforces a finite page/advisory budget.
