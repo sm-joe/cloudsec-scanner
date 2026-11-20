@@ -86,3 +86,28 @@ def test_project_history_isolation(tmp_path):
     b = ScanResult(".", project_key="/project-b", scan_profile="iac")
     record_scan(db, a)
     assert record_scan(db, b)["lifecycle"]["status"] == "initial"
+
+
+def test_historical_policy_file_is_not_iac(tmp_path):
+    path = tmp_path / ".cloudsec.yml"
+    path.write_text("exclude_rules: []\nexclude_rules: []\n")
+    result = scan_target(str(path), load_config(None))
+    assert result.coverage_complete
+    assert not result.errors
+    with pytest.raises(ValueError):
+        load_config(str(path))
+
+
+def test_policy_filename_cannot_hide_iac(tmp_path):
+    path = tmp_path / ".cloudsec.yml"
+    path.write_text("apiVersion: v1\nkind: Pod\nspec:\n  hostPID: true\n")
+    result = scan_target(str(path), load_config(None))
+    assert any(f.rule_id == "K8S-SEC-007" for f in result.findings)
+
+
+def test_duplicate_keys_in_iac_still_fail_closed(tmp_path):
+    path = tmp_path / "deployment.yaml"
+    path.write_text("kind: Pod\nkind: Deployment\n")
+    result = scan_target(str(path), load_config(None))
+    assert result.errors
+    assert not result.coverage_complete

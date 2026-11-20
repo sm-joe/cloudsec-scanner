@@ -404,7 +404,17 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
             current: list[Finding] = []
             if "secrets" in enabled:
                 current.extend(_scan_secrets(path, text))
-            if "iac" in enabled and path.name not in {"package-lock.json"}:
+            # Policy-only YAML is not an infrastructure template. The active
+            # configuration is independently validated by load_config.
+            is_policy = False
+            if path.name in {".cloudsec.yml", ".cloudsec.yaml", ".cloudsec-ci.yml"}:
+                from cloudsec_scanner.config import DEFAULT_CONFIG
+                try:
+                    policy_docs = list(yaml.safe_load_all(text))
+                    is_policy = len(policy_docs) == 1 and isinstance(policy_docs[0], dict) and set(policy_docs[0]) <= set(DEFAULT_CONFIG)
+                except (yaml.YAMLError, RecursionError, TypeError):
+                    pass
+            if "iac" in enabled and path.name != "package-lock.json" and not is_policy:
                 if path.suffix.lower() == ".tf":
                     current.extend(_scan_terraform(path, text))
                 elif (

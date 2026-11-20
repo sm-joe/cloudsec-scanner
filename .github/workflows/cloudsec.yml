@@ -38,6 +38,9 @@ jobs:
         id: tests
         run: python -m pytest -q
 
+      - name: Validate Current Example Policy
+        run: python -c "from cloudsec_scanner.config import load_config; load_config('examples/.cloudsec.yml')"
+
       - name: Create Reports Directory
         run: python -c "from pathlib import Path; Path('reports').mkdir(parents=True, exist_ok=True)"
 
