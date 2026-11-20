@@ -225,88 +225,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
 
 
 def _scan_terraform(path: Path, text: str) -> list[Finding]:
-    findings: list[Finding] = []
-    checks = [
-        (
-            r"(?s)resource\s+\"aws_s3_bucket_acl\"\s+\"([^\"]+)\"\s*\{[^}]*acl\s*=\s*\"public-read(?:-write)?\"",
-            "AWS-TF-001",
-            "Public S3 bucket ACL",
-            "HIGH",
-            "An S3 bucket ACL grants public read or write access.",
-            "Remove public ACLs and use S3 Block Public Access with least-privilege bucket policies.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_security_group_rule\"\s+\"([^\"]+)\"\s*\{[^}]*type\s*=\s*\"ingress\"[^}]*cidr_blocks\s*=\s*\[[^]]*\"0\.0\.0\.0/0\"",
-            "AWS-TF-002",
-            "Security group ingress open to the internet",
-            "HIGH",
-            "An ingress rule allows traffic from every IPv4 address.",
-            "Restrict source CIDRs to trusted networks and limit exposed ports.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_ebs_volume\"\s+\"([^\"]+)\"\s*\{[^}]*encrypted\s*=\s*false",
-            "AWS-TF-003",
-            "EBS volume encryption disabled",
-            "HIGH",
-            "The EBS volume explicitly disables encryption.",
-            "Enable EBS encryption; prefer the AWS-managed EBS KMS key when a customer-managed key is not required.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_db_instance\"\s+\"([^\"]+)\"\s*\{[^}]*storage_encrypted\s*=\s*false",
-            "AWS-TF-004",
-            "RDS storage encryption disabled",
-            "HIGH",
-            "The database explicitly disables storage encryption.",
-            "Set storage_encrypted = true and verify encryption requirements for existing databases.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_s3_bucket\"\s+\"([^\"]+)\"\s*\{[^}]*force_destroy\s*=\s*true",
-            "AWS-TF-005",
-            "S3 bucket force destroy enabled",
-            "LOW",
-            "Terraform can destroy a non-empty bucket without an additional safeguard.",
-            "Disable force_destroy for production buckets unless lifecycle automation explicitly requires it.",
-        ),
-    ]
-    for pattern, rule_id, title, severity, message, remediation in checks:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            line = text.count("\n", 0, match.start()) + 1
-            findings.append(
-                _finding(
-                    rule_id,
-                    title,
-                    severity,
-                    message,
-                    path,
-                    line,
-                    remediation,
-                    "AWS",
-                    match.group(1),
-                    ("CIS AWS Foundations Benchmark",),
-                )
-            )
-    if re.search(
-        r"(?s)resource\s+\"aws_iam_policy\".*?\bAction\s*=\s*\[?\s*\"\*\".*?\bResource\s*=\s*\[?\s*\"\*\"",
-        text,
-    ):
-        match = re.search(r"resource\s+\"aws_iam_policy\"", text)
-        line = text.count("\n", 0, match.start()) + 1 if match else 1
-        findings.append(
-            _finding(
-                "IAM-TF-001",
-                "Wildcard IAM policy permissions",
-                "HIGH",
-                "An IAM policy appears to allow all actions on all resources.",
-                path,
-                line,
-                "Scope actions and resources to the minimum permissions required.",
-                "AWS",
-                compliance=("CIS AWS Foundations Benchmark",),
-                category="iam",
-            )
-        )
-    findings.extend(scan_terraform_document(path, text))
-    return findings
+    return scan_terraform_document(path, text)
 
 
 def _scan_dockerfile(path: Path, text: str) -> list[Finding]:
@@ -320,6 +239,7 @@ def _scan_dockerfile(path: Path, text: str) -> list[Finding]:
             tokens = stripped.split()
             tokens = [token for token in tokens[1:] if not token.startswith("--")]
             image = tokens[0] if tokens else ""
+            inherited_stage = image.lower() in aliases
             user_seen = aliases.get(image.lower(), False)
             if len(tokens) >= 3 and tokens[1].lower() == "as":
                 aliases[tokens[2].lower()] = user_seen
@@ -329,7 +249,7 @@ def _scan_dockerfile(path: Path, text: str) -> list[Finding]:
             user_seen = bool(user) and user.lower() not in {"root", "0"} and not user.startswith("$")
             if stage_alias:
                 aliases[stage_alias] = user_seen
-        if re.match(r"(?i)^FROM\s+", stripped) and image.lower() not in aliases and image != "scratch" and "@" not in image and (":" not in image.rsplit("/", 1)[-1] or image.endswith(":latest")):
+        if re.match(r"(?i)^FROM\s+", stripped) and not inherited_stage and image != "scratch" and "@" not in image and (":" not in image.rsplit("/", 1)[-1] or image.endswith(":latest")):
             findings.append(
                 _finding(
                     "DOCKER-001",
@@ -391,7 +311,15 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
     files, skipped, warnings = discover(target, config["exclude"], config["max_file_bytes"], include_secrets="secrets" in enabled)
     result = ScanResult(target=str(Path(target)), files_skipped=skipped, warnings=warnings)
     result.coverage_complete = bool(files) and bool(enabled) and not warnings
-    result.scan_profile = ",".join(sorted(enabled))
+    # Security-policy changes make lifecycle comparisons non-equivalent.
+    import hashlib
+    profile = {
+        "scanners": sorted(enabled),
+        "exclude": sorted(config["exclude"]),
+        "exclude_rules": sorted(config.get("exclude_rules", [])),
+        "max_file_bytes": config["max_file_bytes"],
+    }
+    result.scan_profile = hashlib.sha256(json.dumps(profile, sort_keys=True).encode()).hexdigest()
     result.project_key = str(Path(target).resolve())
     excluded_rules = set(config.get("exclude_rules", []))
     for path in files:
@@ -450,6 +378,6 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
             result.findings.extend(filtered)
             result.files_scanned += 1
         except (OSError, ValueError, RecursionError, TypeError, AttributeError) as exc:
-            result.errors.append(f"{path}: scan failed ({type(exc).__name__})")
+            result.errors.append(f"{path}: scan failed ({type(exc).__name__}); check file syntax and scanner configuration")
             result.coverage_complete = False
     return result

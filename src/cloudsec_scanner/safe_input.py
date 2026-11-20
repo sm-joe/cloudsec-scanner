@@ -9,12 +9,19 @@ class UniqueLoader(yaml.SafeLoader):
 
 
 def _mapping(loader, node):
+    # Reject duplicate explicit keys before merge expansion; YAML merge overrides are valid.
+    explicit = set()
+    for key_node, _ in node.value:
+        if key_node.tag == "tag:yaml.org,2002:merge":
+            continue
+        key = loader.construct_object(key_node)
+        if key in explicit:
+            raise ValueError("duplicate YAML mapping key")
+        explicit.add(key)
     loader.flatten_mapping(node)
     result = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node)
-        if key in result:
-            raise ValueError("duplicate YAML mapping key")
         result[key] = loader.construct_object(value_node)
     return result
 
