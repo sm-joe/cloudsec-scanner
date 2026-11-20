@@ -68,7 +68,7 @@ def test_image_argument_rejected():
 
 def test_image_missing_results(monkeypatch):
     from types import SimpleNamespace
-    monkeypatch.setattr("cloudsec_scanner.image_scan.subprocess.run", lambda *a, **kw: SimpleNamespace(returncode=0, stdout=json.dumps({}), stderr=""))
+    monkeypatch.setattr("cloudsec_scanner.image_scan._run_json", lambda *a, **kw: {})
     with pytest.raises(ImageScanError, match="Results"):
         scan_image("alpine:3", trivy_path="trivy")
 

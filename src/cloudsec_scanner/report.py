@@ -58,6 +58,7 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
                 "provider": finding.provider,
                 "resource": finding.resource,
                 "compliance": list(finding.compliance),
+                "advisoryIds": list(finding.advisory_ids),
             },
         }
         if finding.evidence:
@@ -86,6 +87,7 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
                     "warnings": result.warnings,
                     "errors": result.errors,
                     "exceptions": result.exceptions,
+                    "provenance": result.provenance,
                 },
             }
         ],
