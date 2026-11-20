@@ -1,5 +1,8 @@
 """Bounded read-only AWS inventory and posture checks."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import hashlib
+import hmac
+import secrets
 from typing import Any
 
 from cloudsec_scanner.models import Finding, ScanResult
@@ -132,3 +135,31 @@ def scan_aws(regions, *, session=None):
         for name, callback in (("ec2", ec2), ("rds", rds), ("ecr", ecr), ("eks", eks)):
             _collect(inventory, name, region, lambda callback=callback, region=region: callback(region))
     return inventory
+
+
+def redact_inventory(inventory, *, key=None):
+    """Export-only, per-run keyed pseudonyms; never retain or export the key."""
+    key = secrets.token_bytes(32) if key is None else key
+    def pseudonym(domain, value):
+        return hmac.new(key, (domain + ":" + value).encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    target = "aws://account-" + pseudonym("account", inventory.result.target)
+    identities = {}
+    assets = []
+    for asset in inventory.assets:
+        uri = target + "/" + asset["region"] + "/" + asset["service"] + "/resource-" + pseudonym("asset", asset["id"])
+        identities[asset["id"]] = uri
+        # Properties are allowlisted scalar posture fields; never export arbitrary SDK data.
+        props = {k: v for k, v in asset["properties"].items() if k in {"encrypted", "publicly_accessible", "public_ip_present", "endpoint_public_access"} and type(v) is bool}
+        if asset["properties"].get("tag_mutability") in ("MUTABLE", "IMMUTABLE", "MUTABLE_WITH_EXCLUSION", "IMMUTABLE_WITH_EXCLUSION"):
+            props["tag_mutability"] = asset["properties"]["tag_mutability"]
+        assets.append({**asset, "id": uri, "account": target.split("://", 1)[1], "resource": uri.rsplit("/", 1)[1], "properties": props})
+    findings = []
+    for finding in inventory.result.findings:
+        uri = identities.get(finding.path)
+        if uri is None:
+            raise ValueError("cannot redact unmapped AWS finding")
+        findings.append(replace(finding, path=uri, resource=uri, resource_id=uri, evidence=None))
+    result = replace(inventory.result, target=target, project_key=target, findings=findings,
+                     provenance={"privacy": "per-report HMAC pseudonyms; not comparable across exports"},
+                     scan_profile=inventory.result.scan_profile + ":anonymous")
+    return AWSInventory(result, assets, inventory.coverage)

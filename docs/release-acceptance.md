@@ -19,3 +19,5 @@ The release-candidate workflow produces artifacts for inspection only. Package n
 Candidate integrity gate: `scripts/verify_release_artifacts.py` checks both archive licenses, SPDX metadata and the complete checksum manifest. Main-only attestation runs after successful packaging, never on a pull request. Verify the actual attestation before certifying signed provenance.
 
 Schema/privacy increment: validate native JSON, SARIF and CycloneDX exports offline using vendored schema snapshots; introduce fingerprint version 2 and opt-in relative paths. Re-review older baselines and exceptions. Cloud identity pseudonymization and upstream schema licensing review remain pending.
+
+Final integrity increment: per-query OSV pagination with bounded continuation, severity-aware v2 exceptions including revoked baseline approvals, and opt-in AWS identifier pseudonymization. Pending CI. Remaining publication requirements include installed runtime dependency audit, upstream schema notices and final artifact distribution verification.

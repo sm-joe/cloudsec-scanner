@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 
 from cloudsec_scanner.safe_input import safe_yaml_documents
+from cloudsec_scanner.models import SEVERITY_ORDER
 from cloudsec_scanner.comparison import finding_identity, _relative_finding
 
 
@@ -13,7 +14,7 @@ def load_exceptions(path):
     if len(raw) > 1024 * 1024:
         raise ValueError("exception file exceeds size limit")
     docs = safe_yaml_documents(raw.decode("utf-8"))
-    if len(docs) != 1 or not isinstance(docs[0], dict) or set(docs[0]) != {"version", "exceptions"} or type(docs[0]["version"]) is not int or docs[0]["version"] != 1:
+    if len(docs) != 1 or not isinstance(docs[0], dict) or set(docs[0]) != {"version", "exceptions"} or type(docs[0]["version"]) is not int or docs[0]["version"] != 2:
         raise ValueError("invalid exception policy schema")
     entries = docs[0]["exceptions"]
     if not isinstance(entries, list) or len(entries) > 10000:
@@ -21,8 +22,10 @@ def load_exceptions(path):
     seen = set()
     result = []
     for entry in entries:
-        if not isinstance(entry, dict) or set(entry) != {"finding_id", "expires", "reason", "approved_by"}:
-            raise ValueError("exception requires finding_id, expires, reason and approved_by")
+        if not isinstance(entry, dict) or set(entry) != {"finding_id", "expires", "reason", "approved_by", "approved_severity"}:
+            raise ValueError("exception requires finding_id, expires, reason, approved_by and approved_severity")
+        if not isinstance(entry["approved_severity"], str) or entry["approved_severity"] not in SEVERITY_ORDER:
+            raise ValueError("invalid approved exception severity")
         identity = entry["finding_id"]
         if not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{64}", identity) or identity in seen:
             raise ValueError("invalid or duplicate exception fingerprint")
@@ -45,6 +48,7 @@ def apply_exceptions(result, exceptions, *, today=None):
     today = today or datetime.now(UTC).date()
     by_id = {entry["finding_id"]: entry for entry in exceptions}
     identities = [finding_identity(_relative_finding(f.to_dict(), {"target": result.target})) for f in result.findings]
+    severity_by_id = dict(zip(identities, (f.severity for f in result.findings), strict=True))
     counts = {}
     for identity in identities:
         counts[identity] = counts.get(identity, 0) + 1
@@ -55,7 +59,16 @@ def apply_exceptions(result, exceptions, *, today=None):
         if not entry:
             continue
         matched.add(identity)
-        status = "EXPIRED" if date.fromisoformat(entry["expires"]) < today else "AMBIGUOUS" if counts[identity] != 1 else "ACCEPTED"
+        if date.fromisoformat(entry["expires"]) < today:
+            status = "EXPIRED"
+        elif counts[identity] != 1:
+            status = "AMBIGUOUS"
+        elif entry.get("approved_severity") not in SEVERITY_ORDER:
+            status = "REVIEW_REQUIRED"
+        elif SEVERITY_ORDER[severity_by_id[identity]] < SEVERITY_ORDER[entry["approved_severity"]]:
+            status = "SEVERITY_ESCALATED"
+        else:
+            status = "ACCEPTED"
         result.exceptions.append({**entry, "status": status})
         if status == "ACCEPTED":
             active.append(identity)

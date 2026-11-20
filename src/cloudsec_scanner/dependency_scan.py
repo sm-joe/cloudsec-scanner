@@ -195,51 +195,58 @@ def _query_osv_batch(
     timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> list[dict[str, Any]]:
     """Submit one batch to OSV and validate the returned result structure."""
-    payload = json.dumps({"queries": queries}).encode("utf-8")
-    request = Request(
-        OSV_QUERY_BATCH_URL,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "cloudsec-scanner",
-        },
-        method="POST",
-    )
-
-    data = _request_json(request, timeout=timeout)
-
-    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
-        raise DependencyScanError("OSV API response is missing a results array")
-
-    results = data["results"]
-    if len(results) != len(queries):
-        raise DependencyScanError("OSV API response count does not match the submitted query count")
-
-    if not all(isinstance(item, dict) for item in results):
-        raise DependencyScanError("OSV API returned an invalid result entry")
-
-    # OSV querybatch returns advisory IDs and modification timestamps,
-    # not full advisory metadata. Resolve each unique ID once per batch.
-    advisories = {}
-    for result in results:
-        entries = result.get("vulns", [])
-        if not isinstance(entries, list):
-            raise DependencyScanError("OSV API returned an invalid vulns array")
-        resolved = []
-        for entry in entries:
-            if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
-                raise DependencyScanError("OSV API returned an invalid advisory")
-            identifier = entry["id"]
-            if identifier not in advisories:
-                if len(advisories) >= MAX_ADVISORIES:
+    # QueryBatch pagination is per query, not per response. Preserve original
+    # result positions while subsequent requests contain only unfinished queries.
+    pending = [(index, dict(query)) for index, query in enumerate(queries)]
+    seen_tokens = [set() for _ in queries]
+    identifiers = [set() for _ in queries]
+    all_ids = set()
+    for _ in range(100):
+        if not pending:
+            break
+        request = Request(
+            OSV_QUERY_BATCH_URL,
+            data=json.dumps({"queries": [query for _, query in pending]}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "cloudsec-scanner"},
+            method="POST",
+        )
+        data = _request_json(request, timeout=timeout)
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise DependencyScanError("OSV API response is missing a results array")
+        results = data["results"]
+        if len(results) != len(pending):
+            raise DependencyScanError("OSV API response count does not match the submitted query count")
+        next_pending = []
+        for (index, query), result in zip(pending, results, strict=True):
+            if not isinstance(result, dict):
+                raise DependencyScanError("OSV API returned an invalid result entry")
+            entries = result.get("vulns", [])
+            if not isinstance(entries, list):
+                raise DependencyScanError("OSV API returned an invalid vulns array")
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", entry["id"]):
+                    raise DependencyScanError("OSV API returned an invalid advisory")
+                identifiers[index].add(entry["id"])
+                all_ids.add(entry["id"])
+                if len(all_ids) > MAX_ADVISORIES:
                     raise DependencyScanError("OSV advisory budget exceeded")
-                advisories[identifier] = _fetch_advisory(identifier)
-            advisory = advisories[identifier]
-            if not advisory.get("withdrawn"):
-                resolved.append(advisory)
-        result["vulns"] = resolved
-    return results
+            continuation = result.get("next_page_token")
+            if continuation is not None and not isinstance(continuation, str):
+                raise DependencyScanError("invalid OSV pagination token")
+            if continuation:
+                if len(continuation) > 8192 or continuation in seen_tokens[index]:
+                    raise DependencyScanError("invalid or repeated OSV pagination token")
+                seen_tokens[index].add(continuation)
+                next_pending.append((index, {**query, "page_token": continuation}))
+        pending = next_pending
+    if pending:
+        raise DependencyScanError("OSV pagination budget exceeded")
+    advisories = {identifier: _fetch_advisory(identifier) for identifier in sorted(all_ids)}
+    for item in advisories.values():
+        withdrawn = item.get("withdrawn")
+        if withdrawn is not None and (not isinstance(withdrawn, str) or not withdrawn.strip()):
+            raise DependencyScanError("invalid OSV withdrawal metadata")
+    return [{"vulns": [advisories[identifier] for identifier in sorted(ids) if not advisories[identifier].get("withdrawn")]} for ids in identifiers]
 
 
 def _vulnerability_severity(vulnerability: dict[str, Any]) -> str:
@@ -264,6 +271,7 @@ def _vulnerability_severity(vulnerability: dict[str, Any]) -> str:
                 elif entry.get("type") == "CVSS_V4":
                     score = CVSS4(vector).scores()[0]
                 else:
+                    known.append("HIGH")
                     continue
                 known.append("CRITICAL" if score >= 9 else "HIGH" if score >= 7 else "MEDIUM" if score >= 4 else "LOW")
             except Exception:
@@ -403,6 +411,8 @@ def scan_dependencies(
         for dependency, result in zip(batch, results, strict=True):
             if not isinstance(result, dict):
                 raise DependencyScanError("OSV API returned an invalid result entry")
+            if result.get("next_page_token"):
+                raise DependencyScanError("OSV adapter returned an incomplete page")
             vulnerabilities = result.get("vulns", [])
             if not isinstance(vulnerabilities, list):
                 raise DependencyScanError("OSV API returned an invalid vulns array")
