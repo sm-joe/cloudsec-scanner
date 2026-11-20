@@ -20,7 +20,9 @@ def main():
         subprocess.run([str(python), "-m", "cloudsec_scanner.cli", "--version"], check=True, cwd=root)
         source = root / "safe.tf"
         source.write_text('resource "aws_ebs_volume" "example" { encrypted = true }', encoding="utf-8")
-        subprocess.run([str(python), "-m", "cloudsec_scanner.cli", "scan", str(source), "--scanner", "iac", "--no-history"], check=True, cwd=root)
+        safe = subprocess.run([str(python), "-m", "cloudsec_scanner.cli", "scan", str(source), "--scanner", "iac", "--no-history", "--color", "never"], check=True, cwd=root, capture_output=True, text=True, encoding="utf-8", env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        if "PASSED" not in safe.stdout or "\x1b" in safe.stdout:
+            raise RuntimeError("wheel failed terminal report smoke test")
         source.write_text('resource "aws_ebs_volume" "example" { encrypted = false }', encoding="utf-8")
         result = subprocess.run([str(python), "-m", "cloudsec_scanner.cli", "scan", str(source), "--scanner", "iac", "--no-history"], cwd=root)
         if result.returncode != 1:

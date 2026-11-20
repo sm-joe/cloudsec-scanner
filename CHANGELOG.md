@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — authorized release refresh
 
 - Redesigned CLI terminal scan results with actual rule IDs and finding fingerprints, status colors, truthful evaluated-resource pass counts, and plain-text exports.
+- Professional product documentation and focused technical guides.
+- One-time refresh of the unchanged version; new checksums and build provenance replace the initial public distribution. Existing installations require a forced reinstall.
 
 
-## 0.1.0
+## 0.1.0 — initial publication
 
 - Structured Terraform and Terraform plan checks, selected CloudFormation, Kubernetes, ARM, GCP and Dockerfile rules.
 - Redacted secret findings; resolved dependency inventories and OSV advisory enrichment with CVSS.
