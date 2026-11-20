@@ -150,6 +150,19 @@ def scan_secrets(path: Path, text: str) -> list[Finding]:
         add("SEC-SECRET-001", match, "AWS access key: [REDACTED]")
 
     for match in _ASSIGNMENT_PATTERN.finditer(text):
+        # GitHub Actions OIDC permissions are enum values, not credential assignments.
+        # Restrict this distinction to the exact workflow key and standalone YAML line.
+        line_start = text.rfind("\n", 0, match.start()) + 1
+        line_end = text.find("\n", match.end())
+        line_text = text[line_start:line_end if line_end != -1 else len(text)]
+        if (
+            path.parent.name == "workflows"
+            and path.parent.parent.name == ".github"
+            and path.suffix in {".yaml", ".yml"}
+            and match.group("key").lower() == "token"
+            and re.fullmatch(r"[ \t]*id-token:[ \t]*(?:write|none|read)[ \t]*(?:#.*)?", line_text)
+        ):
+            continue
         value = match.group("value").rstrip(".")
         if _is_placeholder(value):
             continue
