@@ -20,8 +20,8 @@ def _normalise_resource(finding: dict[str, Any]) -> str:
     resource = resource.strip()
     # Container vulnerability resources are emitted as package@installed-version.
     # Exclude the version so an upgraded package retains the same finding identity.
-    if finding.get("provider") == "Container" and finding.get("category") == "vulnerability":
-        return resource.split("@", 1)[0]
+    if finding.get("category") == "dependency" or (finding.get("provider") == "Container" and finding.get("category") == "vulnerability"):
+        return resource.rsplit("@", 1)[0] if "@" in resource.lstrip("@") else resource
     return resource
 
 
