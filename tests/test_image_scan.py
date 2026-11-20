@@ -73,5 +73,5 @@ def test_rejects_failed_trivy_execution(monkeypatch):
         "cloudsec_scanner.image_scan.subprocess.run",
         lambda *args, **kwargs: CompletedProcess(args[0], 1, "", "image not found"),
     )
-    with pytest.raises(ImageScanError, match="image not found"):
+    with pytest.raises(ImageScanError, match="Trivy image scan failed"):
         scan_image("missing:tag")

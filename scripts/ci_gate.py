@@ -34,10 +34,9 @@ def _load_comparison(path: Path) -> dict[str, Any]:
 
 
 def _severity(value: Any) -> str:
-    if not isinstance(value, str):
-        return "INFO"
-    normalized = value.upper()
-    return normalized if normalized in SEVERITY_ORDER else "INFO"
+    if not isinstance(value, str) or value.upper() not in SEVERITY_ORDER:
+        raise ValueError("invalid or missing finding severity")
+    return value.upper()
 
 
 def evaluate_comparison(comparison: dict[str, Any], threshold: str = "HIGH") -> list[str]:

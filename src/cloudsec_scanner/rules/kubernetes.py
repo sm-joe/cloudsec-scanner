@@ -102,7 +102,7 @@ def scan_kubernetes_document(doc: Any, path: Path, text: str) -> list[Finding]:
             )
     if kind in {"ClusterRole", "Role"}:
         for rule in mappings(doc.get("rules")):
-            if "*" in rule.get("verbs", []) or "*" in rule.get("resources", []):
+            if "*" in (rule.get("verbs") or []) or "*" in (rule.get("resources") or []):
                 findings.append(
                     finding(
                         "K8S-RBAC-001",

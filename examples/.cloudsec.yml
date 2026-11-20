@@ -10,12 +10,5 @@ severity_threshold: HIGH
 fail_on_findings: true
 fail_on_new_findings: false
 severity_overrides: {}
-exclude_rules: []
 max_file_bytes: 2097152
-scanners:
-  - iac
-  - secrets
-
-severity_overrides:
-  "AWS-TF-001": LOW
-  "CUSTOM-RULE-001": CRITICAL
+scanners: [iac, secrets, dependencies]

@@ -19,7 +19,7 @@ def test_default_config_returns_independent_mutable_values():
 
     assert "custom/**" not in second["exclude"]
     assert second["scanners"] == ["iac", "secrets", "dependencies"]
-    assert DEFAULT_CONFIG["scanners"] == ["iac", "secrets"]
+    assert DEFAULT_CONFIG["scanners"] == ["iac", "secrets", "dependencies"]
 
 
 def test_valid_config_is_loaded_and_severity_is_normalized(tmp_path):

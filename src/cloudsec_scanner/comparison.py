@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any
+from cloudsec_scanner.models import SEVERITY_ORDER
 
 
 class ComparisonError(ValueError):
@@ -51,11 +52,24 @@ def finding_identity(finding: dict[str, Any]) -> str:
         "category": category,
         "provider": provider,
         "resource": resource,
-        "evidence": evidence if not resource else "",
+        "evidence": evidence if not resource or category == "dependency" else "",
         "line": line if not resource else None,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _relative_finding(finding: dict[str, Any], document: dict[str, Any]) -> dict[str, Any]:
+    path, target = finding.get("path"), document.get("target")
+    if isinstance(path, str) and isinstance(target, str) and not target.startswith("image://"):
+        normalized = path.replace("\\", "/")
+        root = target.replace("\\", "/").rstrip("/")
+        if normalized == root:
+            normalized = root.rsplit("/", 1)[-1]
+        elif root and root != "." and normalized.startswith(root + "/"):
+            normalized = normalized[len(root) + 1:]
+        return {**finding, "path": normalized.removeprefix("./")}
+    return finding
 
 
 def _read_report(path: str | Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -77,9 +91,9 @@ def _read_report(path: str | Path) -> tuple[dict[str, Any], dict[str, dict[str, 
 
     indexed: dict[str, dict[str, Any]] = {}
     for item in findings:
-        if not isinstance(item, dict):
-            continue
-        identity = finding_identity(item)
+        if not isinstance(item, dict) or item.get("severity") not in SEVERITY_ORDER:
+            raise ComparisonError("invalid finding or severity")
+        identity = finding_identity(_relative_finding(item, document))
         # Preserve duplicates deterministically instead of silently overwriting one.
         if identity in indexed:
             suffix = 2
@@ -94,6 +108,11 @@ def compare_report_documents(
     baseline_doc: dict[str, Any], current_doc: dict[str, Any]
 ) -> dict[str, Any]:
     """Compare two already-loaded CloudSec JSON report documents."""
+    for document in (baseline_doc, current_doc):
+        if document.get("coverage_complete") is False or document.get("errors"):
+            raise ComparisonError("cannot compare incomplete scans")
+    if baseline_doc.get("scan_profile") and current_doc.get("scan_profile") and baseline_doc["scan_profile"] != current_doc["scan_profile"]:
+        raise ComparisonError("scan profiles differ")
     baseline, current = _index_report_findings(baseline_doc), _index_report_findings(current_doc)
 
     new: list[dict[str, Any]] = []
@@ -169,9 +188,9 @@ def _index_report_findings(document: dict[str, Any]) -> dict[str, dict[str, Any]
         raise ComparisonError("report must be a cloudsec JSON report with a findings array; SARIF is not supported")
     indexed: dict[str, dict[str, Any]] = {}
     for item in findings:
-        if not isinstance(item, dict):
-            continue
-        identity = finding_identity(item)
+        if not isinstance(item, dict) or item.get("severity") not in SEVERITY_ORDER:
+            raise ComparisonError("invalid finding or severity")
+        identity = finding_identity(_relative_finding(item, document))
         if identity in indexed:
             suffix = 2
             while f"{identity}:{suffix}" in indexed:

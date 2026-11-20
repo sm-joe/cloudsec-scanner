@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from cloudsec_scanner.models import SEVERITY_ORDER, ScanResult
+from cloudsec_scanner import __version__
 
 
 def _sarif(result: ScanResult) -> dict[str, Any]:
@@ -62,13 +63,14 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
                 "tool": {
                     "driver": {
                         "name": "cloudsec-scanner",
-                        "version": "0.1.0",
+                        "version": __version__,
                         "rules": list(rules.values()),
                     }
                 },
                 "results": results,
                 "properties": {
                     "target": result.target,
+                    "coverageComplete": result.coverage_complete and not result.errors,
                     "filesScanned": result.files_scanned,
                     "filesSkipped": result.files_skipped,
                     "warnings": result.warnings,
@@ -94,7 +96,7 @@ def render_text(result: ScanResult) -> str:
         "",
     ]
     if not result.findings:
-        lines.append("No findings detected by the enabled rules.")
+        lines.append("No findings detected by the enabled rules." if result.coverage_complete and not result.errors else "Scan incomplete; no clean assessment is available.")
     for f in sorted(
         result.findings,
         key=lambda item: (SEVERITY_ORDER.get(item.severity, 99), item.path, item.line or 0),

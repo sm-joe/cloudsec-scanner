@@ -13,6 +13,7 @@ import yaml
 from cloudsec_scanner.dependency_scan import scan_dependencies
 from cloudsec_scanner.discovery import discover
 from cloudsec_scanner.models import Finding, ScanResult
+from cloudsec_scanner.safe_input import validate_document, safe_yaml_documents
 from cloudsec_scanner.rules import (
     scan_aws_document,
     scan_azure_document,
@@ -82,13 +83,18 @@ def _finding(
     )
 
 
+def _metadata_name(doc: dict) -> str:
+    metadata = doc.get("metadata")
+    return str(metadata.get("name", "unknown")) if isinstance(metadata, dict) else "unknown"
+
+
 def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
     findings: list[Finding] = []
     try:
         if path.suffix.lower() == ".json":
             docs = [json.loads(text)]
         else:
-            docs = list(yaml.safe_load_all(text))
+            docs = safe_yaml_documents(text)
     except (json.JSONDecodeError, yaml.YAMLError) as exc:
         raise ValueError(f"malformed YAML/JSON: {exc}") from exc
 
@@ -97,6 +103,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
             continue
         if not isinstance(doc, (dict, list)):
             continue
+        validate_document(doc)
         flattened = list(_walk(doc))
         is_k8s = isinstance(doc, dict) and ("apiVersion" in doc or "kind" in doc)
         is_cf = isinstance(doc, dict) and ("Resources" in doc or "AWSTemplateFormatVersion" in doc)
@@ -116,7 +123,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             line,
                             "Set securityContext.privileged to false or remove it; use narrowly scoped capabilities.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -131,7 +138,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"hostNetwork\s*:\s*true"),
                             "Disable hostNetwork unless the workload has a documented requirement.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -146,7 +153,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"runAsUser\s*:\s*0"),
                             "Run the workload as a non-root UID and set runAsNonRoot: true.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -161,7 +168,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"automountServiceAccountToken\s*:\s*true"),
                             "Set automountServiceAccountToken: false unless the application requires Kubernetes API access.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -176,7 +183,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"allowPrivilegeEscalation\s*:\s*true"),
                             "Set allowPrivilegeEscalation: false unless explicitly required.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -191,7 +198,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"readOnlyRootFilesystem\s*:\s*false"),
                             "Set readOnlyRootFilesystem: true and mount writable paths explicitly.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -305,11 +312,24 @@ def _scan_terraform(path: Path, text: str) -> list[Finding]:
 def _scan_dockerfile(path: Path, text: str) -> list[Finding]:
     findings: list[Finding] = []
     user_seen = False
+    aliases: dict[str, bool] = {}
+    stage_alias = None
     for number, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()
+        if re.match(r"(?i)^FROM\s+", stripped):
+            tokens = stripped.split()
+            tokens = [token for token in tokens[1:] if not token.startswith("--")]
+            image = tokens[0] if tokens else ""
+            user_seen = aliases.get(image.lower(), False)
+            if len(tokens) >= 3 and tokens[1].lower() == "as":
+                aliases[tokens[2].lower()] = user_seen
+            stage_alias = tokens[2].lower() if len(tokens) >= 3 and tokens[1].lower() == "as" else None
         if re.match(r"(?i)^USER\s+", stripped):
-            user_seen = True
-        if re.match(r"(?i)^FROM\s+[^\s]+:(?:latest)?\s*(?:#.*)?$", stripped):
+            user = stripped.split()[1].split(":")[0]
+            user_seen = bool(user) and user.lower() not in {"root", "0"} and not user.startswith("$")
+            if stage_alias:
+                aliases[stage_alias] = user_seen
+        if re.match(r"(?i)^FROM\s+", stripped) and image.lower() not in aliases and image != "scratch" and "@" not in image and (":" not in image.rsplit("/", 1)[-1] or image.endswith(":latest")):
             findings.append(
                 _finding(
                     "DOCKER-001",
@@ -367,17 +387,24 @@ def _scan_secrets(path: Path, text: str) -> list[Finding]:
 
 
 def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
-    files, skipped, warnings = discover(target, config["exclude"], config["max_file_bytes"])
-    result = ScanResult(target=str(Path(target)), files_skipped=skipped, warnings=warnings)
     enabled = set(config.get("scanners", ["iac", "secrets"]))
+    files, skipped, warnings = discover(target, config["exclude"], config["max_file_bytes"], include_secrets="secrets" in enabled)
+    result = ScanResult(target=str(Path(target)), files_skipped=skipped, warnings=warnings)
+    result.coverage_complete = bool(files) and bool(enabled) and not warnings
+    result.scan_profile = ",".join(sorted(enabled))
+    result.project_key = str(Path(target).resolve())
     excluded_rules = set(config.get("exclude_rules", []))
     for path in files:
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            with path.open("rb") as stream:
+                raw = stream.read(config["max_file_bytes"] + 1)
+            if len(raw) > config["max_file_bytes"]:
+                raise ValueError("file exceeded scan size limit")
+            text = raw.decode("utf-8")
             current: list[Finding] = []
             if "secrets" in enabled:
                 current.extend(_scan_secrets(path, text))
-            if "iac" in enabled:
+            if "iac" in enabled and path.name not in {"package-lock.json"}:
                 if path.suffix.lower() == ".tf":
                     current.extend(_scan_terraform(path, text))
                 elif (
@@ -412,6 +439,7 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
             ]
             result.findings.extend(filtered)
             result.files_scanned += 1
-        except (OSError, ValueError) as exc:
-            result.errors.append(f"{path}: {exc}")
+        except (OSError, ValueError, RecursionError, TypeError, AttributeError) as exc:
+            result.errors.append(f"{path}: scan failed ({type(exc).__name__})")
+            result.coverage_complete = False
     return result
