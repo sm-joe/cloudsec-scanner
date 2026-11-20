@@ -1,0 +1,207 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "fingerprint_version",
+    "tool",
+    "target",
+    "coverage_complete",
+    "scan_profile",
+    "project_key",
+    "summary",
+    "exceptions",
+    "provenance",
+    "assessments",
+    "findings",
+    "warnings",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "fingerprint_version": {
+      "const": 2
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "target": {
+      "type": "string"
+    },
+    "coverage_complete": {
+      "type": "boolean"
+    },
+    "scan_profile": {
+      "type": "string"
+    },
+    "project_key": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "files_scanned",
+        "assets_scanned",
+        "files_skipped",
+        "finding_count",
+        "by_severity",
+        "assessment_counts"
+      ],
+      "properties": {
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "assets_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "finding_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_severity": {
+          "type": "object",
+          "required": [
+            "CRITICAL",
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+            "INFO"
+          ],
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "assessment_counts": {
+          "type": "object",
+          "required": [
+            "EVALUATED",
+            "UNSUPPORTED",
+            "UNRESOLVED",
+            "NOT_APPLICABLE"
+          ],
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "finding_id",
+          "rule_id",
+          "title",
+          "severity",
+          "message",
+          "path",
+          "resource_id",
+          "references",
+          "advisory_ids"
+        ],
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "rule_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "CRITICAL",
+              "HIGH",
+              "MEDIUM",
+              "LOW",
+              "INFO"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "resource_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "advisory_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "resource_id",
+          "resource_type",
+          "status",
+          "reason"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "EVALUATED",
+              "UNSUPPORTED",
+              "UNRESOLVED",
+              "NOT_APPLICABLE"
+            ]
+          }
+        }
+      }
+    },
+    "exceptions": {
+      "type": "array"
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
