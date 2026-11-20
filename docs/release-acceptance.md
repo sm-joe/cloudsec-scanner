@@ -15,3 +15,5 @@ Before a stable tag:
 - Publish only after acceptance; never publish from an unreviewed pull request.
 
 The release-candidate workflow produces artifacts for inspection only. Package name availability and trusted publishing configuration are not yet verified.
+
+Candidate integrity gate: `scripts/verify_release_artifacts.py` checks both archive licenses, SPDX metadata and the complete checksum manifest. Main-only attestation runs after successful packaging, never on a pull request. Verify the actual attestation before certifying signed provenance.

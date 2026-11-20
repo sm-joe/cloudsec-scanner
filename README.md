@@ -356,3 +356,7 @@ OSV records linked by explicit aliases are merged per package/version, retain al
 ### Resource assessment coverage
 
 Native IaC reports now distinguish EVALUATED (implemented predicates ran), UNSUPPORTED, UNRESOLVED, and NOT_APPLICABLE resources. Unsupported or unresolved resources make the scan incomplete even with --no-fail. These statuses describe the selected native rules, not complete provider or CIS compliance. Terraform findings include resource_id (full type/name or plan address); Kubernetes findings include API version, kind, namespace and name. Legacy resource remains available for compatibility. AWS inventory reports use assets_scanned instead of files_scanned. Expanded native predicates include public RDS and EKS endpoints, S3 public access blocking, ECR tag mutability, GCP bucket/SQL controls and weak Azure storage TLS.
+
+### License and candidate verification
+
+CloudSec Scanner is licensed under [Apache-2.0](LICENSE). Release candidate archives contain the license and SPDX metadata. Candidate CI verifies archive contents and SHA-256 checksums; main-branch candidate builds additionally request GitHub build provenance. Download the candidate artifact and run `sha256sum -c SHA256SUMS`. Once provenance exists, verify a distribution with `gh attestation verify <wheel-file> --repo sm-joe/cloudsec-scanner`. Candidate artifacts are not stable releases.

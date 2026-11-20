@@ -40,9 +40,35 @@ jobs:
           cd dist
           sha256sum *.whl *.tar.gz runtime-sbom.json > SHA256SUMS
           sha256sum -c SHA256SUMS
+      - name: Verify candidate license and checksums
+        run: python scripts/verify_release_artifacts.py
       - uses: actions/upload-artifact@v7
         with:
           name: cloudsec-release-candidate-${{ github.run_id }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
+
+  attest:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: cloudsec-release-candidate-${{ github.run_id }}
+          path: dist
+      - name: Check downloaded candidate checksums
+        run: cd dist && sha256sum -c SHA256SUMS
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/runtime-sbom.json
+            dist/SHA256SUMS
