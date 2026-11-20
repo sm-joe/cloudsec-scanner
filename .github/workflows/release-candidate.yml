@@ -32,6 +32,7 @@ jobs:
         shell: bash
         run: |
           python -m venv "$RUNNER_TEMP/cloudsec-release"
+          "$RUNNER_TEMP/cloudsec-release/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/cloudsec-release/bin/python" -m pip install dist/*.whl
           cyclonedx-py environment "$RUNNER_TEMP/cloudsec-release/bin/python" --output-format JSON --output-file dist/runtime-sbom.json
       - name: Audit installed core and AWS runtime dependencies
@@ -40,6 +41,7 @@ jobs:
           set -euo pipefail
           python -m venv "$RUNNER_TEMP/cloudsec-aws"
           wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          "$RUNNER_TEMP/cloudsec-aws/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/cloudsec-aws/bin/python" -m pip install "${wheel}[aws]"
           for profile in cloudsec-release cloudsec-aws; do
             environment="$RUNNER_TEMP/$profile"
@@ -48,8 +50,23 @@ jobs:
             # project itself. Do not silently skip any third-party package.
             "$environment/bin/python" -m pip list --format=json > "$RUNNER_TEMP/$profile-packages.json"
             python scripts/runtime_requirements.py "$RUNNER_TEMP/$profile-packages.json" > "$RUNNER_TEMP/$profile-requirements.txt"
-            pip-audit --strict --no-deps --disable-pip -r "$RUNNER_TEMP/$profile-requirements.txt" --format json --output "$RUNNER_TEMP/$profile-audit.json"
+            echo "Auditing $profile"
+            cat "$RUNNER_TEMP/$profile-requirements.txt"
+            pip-audit --strict --no-deps --disable-pip -r "$RUNNER_TEMP/$profile-requirements.txt" --format json --output "$RUNNER_TEMP/$profile-audit.json" || {
+              if [[ -f "$RUNNER_TEMP/$profile-audit.json" ]]; then cat "$RUNNER_TEMP/$profile-audit.json"; fi
+              exit 1
+            }
           done
+      - name: Preserve dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloudsec-runtime-audit-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cloudsec-*-requirements.txt
+            ${{ runner.temp }}/cloudsec-*-audit.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Generate checksums
         shell: bash
         run: |
