@@ -336,6 +336,7 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
         "exclude": sorted(config["exclude"]),
         "exclude_rules": sorted(config.get("exclude_rules", [])),
         "max_file_bytes": config["max_file_bytes"],
+        "severity_overrides": config.get("severity_overrides", {}),
     }
     result.scan_profile = hashlib.sha256(json.dumps(profile, sort_keys=True).encode()).hexdigest()
     result.project_key = str(Path(target).resolve())

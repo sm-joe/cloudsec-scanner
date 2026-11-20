@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from cloudsec_scanner.models import SEVERITY_ORDER, ScanResult
+from cloudsec_scanner.comparison import finding_identity, _relative_finding
+from urllib.parse import quote
 from cloudsec_scanner import __version__
 
 
@@ -20,7 +22,10 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
         "LOW": "note",
         "INFO": "note",
     }
+    accepted = {entry["finding_id"]: entry for entry in result.exceptions if entry["status"] == "ACCEPTED"}
     for finding in result.findings:
+        relative = _relative_finding(finding.to_dict(), {"target": result.target})
+        identity = finding_identity(relative)
         rules.setdefault(
             finding.rule_id,
             {
@@ -34,6 +39,7 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
         )
         item: dict[str, Any] = {
             "ruleId": finding.rule_id,
+            "partialFingerprints": {"cloudsecFindingId/v1": identity},
             "level": level_map.get(finding.severity, "warning"),
             "message": {"text": finding.message},
             "locations": [
@@ -54,6 +60,8 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
         }
         if finding.evidence:
             item["properties"]["redactedEvidence"] = finding.evidence
+        if identity in accepted:
+            item["suppressions"] = [{"kind": "external", "status": "accepted", "justification": accepted[identity]["reason"]}]
         results.append(item)
     return {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
@@ -75,6 +83,7 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
                     "filesSkipped": result.files_skipped,
                     "warnings": result.warnings,
                     "errors": result.errors,
+                    "exceptions": result.exceptions,
                 },
             }
         ],
@@ -115,6 +124,8 @@ def render_text(result: ScanResult) -> str:
         if f.compliance:
             lines.append(f"  Compliance: {', '.join(f.compliance)}")
         lines.append("")
+    for entry in result.exceptions:
+        lines.append(f"Exception {entry['status']}: {entry['finding_id']} (expires {entry['expires']})")
     for warning in result.warnings:
         lines.append(f"WARNING: {warning}")
     for error in result.errors:
