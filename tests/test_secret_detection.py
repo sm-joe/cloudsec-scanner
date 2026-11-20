@@ -99,3 +99,20 @@ def test_workflow_credential_assignments_remain_detected(tmp_path, line):
 
 def test_oidc_permission_exception_is_workflow_specific(tmp_path):
     assert scan_secrets(tmp_path / "config.yaml", "id-token: write")
+
+
+@pytest.mark.parametrize("sample", ["token: [REDACTED]", 'password = "[REDACTED]"', "GitHub token: [REDACTED]"])
+def test_complete_redaction_marker_is_not_a_credential(tmp_path, sample):
+    assert scan_secrets(tmp_path / "report.txt", sample) == []
+
+
+def test_redacted_prefix_does_not_hide_credential(tmp_path):
+    assert scan_secrets(tmp_path / "config.yaml", "token: [REDACTED]actual-value")
+
+
+def test_detector_source_does_not_flag_its_own_metadata():
+    import cloudsec_scanner.secret_detection as detector
+    from pathlib import Path
+
+    path = Path(detector.__file__)
+    assert not scan_secrets(path, path.read_text(encoding="utf-8"))

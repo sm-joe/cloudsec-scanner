@@ -160,9 +160,14 @@ def scan_secrets(path: Path, text: str) -> list[Finding]:
             and path.parent.parent.name == ".github"
             and path.suffix in {".yaml", ".yml"}
             and match.group("key").lower() == "token"
-            and re.fullmatch(r"[ \t]*id-token:[ \t]*(?:write|none|read)[ \t]*(?:#.*)?", line_text)
+            and re.fullmatch(r"[ \t]*id-token[:][ \t]*(?:write|none|read)[ \t]*(?:#.*)?", line_text)
         ):
             continue
+        # A complete redaction marker is output metadata, not a credential.
+        if match.group("value") == "[REDACTED" and text[match.end():match.end() + 1] == "]":
+            following = text[match.end() + 1:match.end() + 2]
+            if not following or following.isspace() or following in "\"\'`,;}":
+                continue
         value = match.group("value").rstrip(".")
         if _is_placeholder(value):
             continue
