@@ -58,3 +58,25 @@ def test_path_minimization_preserves_identity(tmp_path):
     assert doc["findings"][0]["path"] == "main.tf"
     assert doc["findings"][0]["finding_id"] == result.to_dict()["findings"][0]["finding_id"]
     assert str(tmp_path) not in render_json(sanitized)
+
+
+def test_cli_rejects_legacy_baseline(tmp_path):
+    from cloudsec_scanner.cli import main, EXIT_ERROR
+    source = tmp_path / "main.tf"
+    source.write_text('resource "aws_ebs_volume" "demo" { encrypted = false }', encoding="utf-8")
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps({"target": str(source), "findings": []}), encoding="utf-8")
+    assert main(["scan", str(source), "--baseline", str(baseline), "--fail-on-new", "--scanner", "iac", "--no-history"]) == EXIT_ERROR
+
+
+def test_cli_relative_export(tmp_path):
+    from cloudsec_scanner.cli import main, EXIT_FINDINGS
+    source = tmp_path / "main.tf"
+    source.write_text('resource "aws_ebs_volume" "demo" { encrypted = false }', encoding="utf-8")
+    output = tmp_path / "result.json"
+    assert main(["scan", str(source), "--relative-paths", "--scanner", "iac", "--no-history", "--format", "json", "--output", str(output)]) == EXIT_FINDINGS
+    document = json.loads(output.read_text(encoding="utf-8"))
+    assert document["fingerprint_version"] == 2
+    assert document["target"] == "."
+    assert document["findings"][0]["path"] == "main.tf"
+    assert str(tmp_path) not in json.dumps(document)

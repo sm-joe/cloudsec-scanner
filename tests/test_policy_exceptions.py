@@ -25,7 +25,7 @@ def test_accepted_exception_keeps_finding():
     assert len(result.to_dict()["findings"]) == 1
     assert result.exceptions[0]["status"] == "ACCEPTED"
     sarif = json.loads(render_sarif(result))["runs"][0]["results"][0]
-    assert sarif["partialFingerprints"]["cloudsecFindingId/v1"] == record["finding_id"]
+    assert sarif["partialFingerprints"]["cloudsecFindingId/v2"] == record["finding_id"]
     assert sarif["suppressions"][0]["status"] == "accepted"
 
 

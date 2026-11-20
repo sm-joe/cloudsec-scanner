@@ -57,7 +57,7 @@ def test_baseline_gate_allows_persistent_findings(tmp_path):
 def test_baseline_gate_fails_for_new_blocking_findings(tmp_path):
     target = ROOT / "fixtures/terraform/insecure.tf"
     baseline = tmp_path / "baseline.json"
-    baseline.write_text(json.dumps({"target": str(target), "findings": []}), encoding="utf-8")
+    baseline.write_text(json.dumps({"target": str(target), "fingerprint_version": 2, "findings": []}), encoding="utf-8")
 
     assert main(
         [
