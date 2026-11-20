@@ -18,3 +18,5 @@ Partial increments do not certify a whole milestone. Merge only exact-head passi
 ## Final acceptance hardening
 
 P0 alias deduplication and external scanner integrity plus initial P1 image provenance are implemented in the release-hardening increment, pending CI. Remaining P0 coverage and licensing/artifact verification, P1 schema validation, AWS metrics, full native resource identity, report privacy and rule depth must be completed before stable release.
+
+PR #10 merged: alias deduplication, bounded Trivy and image provenance. Next increment adds native resource assessment records, full identifiers, AWS asset metrics and added IaC predicates. Remaining coverage gaps include complete field/type validation and manifest formats. Fingerprint migration, privacy, schema validation, licensing and artifact attestation remain separate release gates.

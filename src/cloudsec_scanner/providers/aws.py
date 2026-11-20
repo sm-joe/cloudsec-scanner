@@ -65,7 +65,7 @@ def scan_aws(regions, *, session=None):
             raise ValueError("inventory asset budget exceeded")
         uri = f"{target}/{region}/{service}/{identifier}"
         inventory.assets.append({"id": uri, "provider": "AWS", "account": account, "region": region, "service": service, "resource": identifier, "properties": properties})
-        result.files_scanned += 1
+        result.assets_scanned += 1
         return uri
 
     def finding(rule, title, uri, fix, severity="HIGH"):

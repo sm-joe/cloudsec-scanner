@@ -27,6 +27,7 @@ class Finding:
     compliance: tuple[str, ...] = ()
     evidence: str | None = None
     advisory_ids: tuple[str, ...] = ()
+    resource_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -49,6 +50,8 @@ class ScanResult:
     project_key: str = ""
     exceptions: list[dict[str, Any]] = field(default_factory=list)
     provenance: dict[str, Any] = field(default_factory=dict)
+    assessments: list[dict[str, str]] = field(default_factory=list)
+    assets_scanned: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         from cloudsec_scanner.comparison import finding_identity, _relative_finding
@@ -62,6 +65,8 @@ class ScanResult:
             "project_key": self.project_key,
             "summary": {
                 "files_scanned": self.files_scanned,
+                "assets_scanned": self.assets_scanned,
+                "assessment_counts": {status: sum(a["status"] == status for a in self.assessments) for status in ("EVALUATED", "UNSUPPORTED", "UNRESOLVED", "NOT_APPLICABLE")},
                 "files_skipped": self.files_skipped,
                 "finding_count": len(self.findings),
                 "by_severity": {
@@ -71,6 +76,7 @@ class ScanResult:
             },
             "exceptions": self.exceptions,
             "provenance": self.provenance,
+            "assessments": self.assessments,
             "findings": [
                 {**finding.to_dict(), "finding_id": finding_identity(_relative_finding(finding.to_dict(), {"target": self.target}))}
                 for finding in sorted(
