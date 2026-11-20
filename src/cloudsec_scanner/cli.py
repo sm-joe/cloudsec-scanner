@@ -119,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--format", choices=("text", "json"), default="text")
     compare.add_argument("--output", help="write comparison report to this path")
 
+    cloud = sub.add_parser("cloud", help="read-only live cloud inventory and posture")
+    cloud.add_argument("provider", choices=("aws",))
+    cloud.add_argument("--region", action="append", required=True, help="AWS region; repeat to scan multiple regions")
+    cloud.add_argument("--output", help="output inventory JSON path")
+    cloud.add_argument("--no-fail", action="store_true", help="ignore findings exit code, not collection errors")
+
     sbom = sub.add_parser("sbom", help="export resolved dependency inventory as CycloneDX JSON")
     sbom.add_argument("target", help="lockfile or directory")
     sbom.add_argument("--output", help="output SBOM JSON path")
@@ -316,6 +322,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "cloud":
+            from cloudsec_scanner.providers.aws import scan_aws
+            inventory = scan_aws(args.region)
+            rendered = json.dumps(inventory.to_dict(), indent=2) + "\n"
+            if args.output:
+                output = Path(args.output)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(rendered, encoding="utf-8")
+            else:
+                print(rendered, end="")
+            if not inventory.result.coverage_complete:
+                return EXIT_ERROR
+            return EXIT_FINDINGS if not args.no_fail and any(f.severity in {"HIGH", "CRITICAL"} for f in inventory.result.findings) else EXIT_OK
+
         if args.command == "sbom":
             from cloudsec_scanner.sbom import build_sbom
             rendered = json.dumps(build_sbom(args.target), indent=2) + "\n"

@@ -288,3 +288,13 @@ cloudsec sbom . --output reports/sbom.json
 ```
 
 This is a resolved dependency inventory, not a complete build-attested or transitive relationship graph. Unsupported ecosystem formats are not certified.
+
+
+### Live AWS inventory (initial coverage)
+
+```bash
+pip install '.[aws]'
+cloudsec cloud aws --region us-east-1 --output reports/aws-inventory.json
+```
+
+Uses the normal AWS SDK credential chain (prefer short-lived role credentials). No write operations are performed. The initial adapter inventories EC2 instances, EBS volumes, security groups, RDS instances, ECR repositories and EKS clusters. It checks encryption, administrative ingress, public RDS and EKS exposure, and ECR tag mutability. Coverage is explicitly limited to the requested regions and listed services; it is not a full account compliance assessment. Each failed service collection marks the output incomplete and returns exit code 3, including under --no-fail. A successful collection with HIGH/CRITICAL findings returns 1 unless --no-fail is provided. Live AWS validation requires an authorized account and read-only role. Other providers and services remain future increments.
