@@ -74,7 +74,7 @@ python -m pip install "https://github.com/sm-joe/cloudsec-scanner/releases/downl
 cloudsec --version
 ```
 
-The latest published version is v0.1.0. The redesigned colored terminal report is available on main and is documented separately below.
+Version v0.1.0 includes the refreshed terminal presentation after the one-time release refresh succeeds. Existing installations of the original v0.1.0 must reinstall the wheel with `--force-reinstall --no-cache-dir`; the version number is intentionally unchanged. Verify the current release checksums before installation.
 
 ### Verify release integrity
 
@@ -144,7 +144,7 @@ By default the scan command enables IaC, secrets and dependencies. Select only `
 
 ## Scan Output
 
-The new terminal presentation on main displays numbered findings, actual rule IDs, full finding fingerprints, resource IDs, remediation and coverage-aware resource outcomes. The terminal colors FAILED red and PASSED green. Install from main to try this presentation before its next packaged release.
+The redesigned terminal presentation displays numbered findings, actual rule IDs, full finding fingerprints, resource IDs, remediation and coverage-aware resource outcomes. The terminal colors FAILED red and PASSED green.
 
 ```text
 CloudSec Scanner  v0.1.0
@@ -183,7 +183,7 @@ COMPLETED WITH FINDINGS
 *Shortened example from the accepted post-remediation IaC scan. Actual output includes risk, fix and file context for each finding and passed resource.*
 
 ```bash
-# Available on main; not in the published v0.1.0 wheel
+# Available in the refreshed v0.1.0 wheel
 cloudsec scan iac/ --scanner iac --color always
 cloudsec scan iac/ --scanner iac --color never
 ```
