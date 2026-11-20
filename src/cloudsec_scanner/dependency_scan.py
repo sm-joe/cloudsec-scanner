@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from cloudsec_scanner.models import Finding
+from cloudsec_scanner.lockfiles import LOCK_NAMES, parse_extra_lock
 
 OSV_QUERY_BATCH_URL = "https://api.osv.dev/v1/querybatch"
 REQUEST_TIMEOUT_SECONDS = 15
@@ -88,7 +89,7 @@ def _parse_package_lock(text: str) -> list[dict[str, str]]:
         raise DependencyScanError("package-lock.json must contain a JSON object")
 
     lock_version = document.get("lockfileVersion")
-    if not isinstance(lock_version, int) or lock_version < 2:
+    if not isinstance(lock_version, int) or lock_version not in {2, 3}:
         raise DependencyScanError("only package-lock.json version 2 and 3 are supported")
 
     packages = document.get("packages")
@@ -103,10 +104,12 @@ def _parse_package_lock(text: str) -> list[dict[str, str]]:
             continue
 
         # The empty path describes the project itself, not an installed package.
-        if package_path == "" or not package_path.startswith("node_modules/"):
+        if package_path == "" or "node_modules/" not in package_path:
             continue
 
         if not isinstance(metadata, dict):
+            raise DependencyScanError("invalid npm package entry")
+        if metadata.get("link") is True:
             continue
 
         name = metadata.get("name")
@@ -115,7 +118,7 @@ def _parse_package_lock(text: str) -> list[dict[str, str]]:
 
         version = metadata.get("version")
         if not isinstance(version, str) or not version:
-            continue
+            raise DependencyScanError("npm package missing resolved version")
 
         key = (name.lower(), version)
         if key in seen:
@@ -138,8 +141,13 @@ def parse_dependencies(path: Path, text: str) -> list[dict[str, str]]:
     if path.name == "requirements.txt":
         return _parse_requirements(text)
 
-    if path.name == "package-lock.json":
+    if path.name in {"package-lock.json", "npm-shrinkwrap.json"}:
         return _parse_package_lock(text)
+    if path.name in LOCK_NAMES:
+        try:
+            return parse_extra_lock(path, text)
+        except (ValueError, TypeError) as exc:
+            raise DependencyScanError("invalid or unsupported dependency lockfile") from exc
 
     return []
 
@@ -164,11 +172,14 @@ def _query_osv_batch(
 
     try:
         with urlopen(request, timeout=timeout) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            raw = response.read(16 * 1024 * 1024 + 1)
+            if len(raw) > 16 * 1024 * 1024:
+                raise DependencyScanError("OSV response exceeds size budget")
+            data = json.loads(raw.decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
-        raise DependencyScanError(f"OSV API request failed: {exc}") from exc
+        raise DependencyScanError("OSV API request failed; check network connectivity") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise DependencyScanError(f"OSV API returned invalid JSON: {exc}") from exc
+        raise DependencyScanError("OSV API returned invalid JSON") from exc
 
     if not isinstance(data, dict) or not isinstance(data.get("results"), list):
         raise DependencyScanError("OSV API response is missing a results array")
@@ -256,10 +267,14 @@ def scan_dependencies(
 ) -> list[Finding]:
     """Scan supported dependency files against OSV."""
     dependencies = parse_dependencies(path, text)
-    if not dependencies:
-        return []
-
     findings: list[Finding] = []
+
+    if path.name == "requirements.txt":
+        # A pin-only scan must not silently certify unresolved dependencies.
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and not _REQUIREMENT_RE.fullmatch(stripped.split(";", 1)[0].strip()):
+                raise DependencyScanError("unresolved requirements entry; supply a fully pinned requirements file")
 
     for offset in range(0, len(dependencies), MAX_BATCH_SIZE):
         batch = dependencies[offset : offset + MAX_BATCH_SIZE]
@@ -287,8 +302,8 @@ def scan_dependencies(
                 raise DependencyScanError("OSV API returned an invalid vulns array")
 
             for vulnerability in vulnerabilities:
-                if not isinstance(vulnerability, dict):
-                    continue
+                if not isinstance(vulnerability, dict) or not isinstance(vulnerability.get("id"), str) or not vulnerability["id"].strip():
+                    raise DependencyScanError("OSV API returned an invalid advisory")
                 findings.append(_finding(path, dependency, vulnerability))
 
     # A package can be reported by multiple records; keep each advisory once.

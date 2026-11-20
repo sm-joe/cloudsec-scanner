@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from cloudsec_scanner.dependency_scan import scan_dependencies
+from cloudsec_scanner.lockfiles import LOCK_NAMES
 from cloudsec_scanner.discovery import discover
 from cloudsec_scanner.models import Finding, ScanResult
 from cloudsec_scanner.safe_input import validate_document, safe_yaml_documents
@@ -342,7 +343,7 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
                     is_policy = len(policy_docs) == 1 and isinstance(policy_docs[0], dict) and set(policy_docs[0]) <= set(DEFAULT_CONFIG)
                 except (yaml.YAMLError, RecursionError, TypeError):
                     pass
-            if "iac" in enabled and path.name != "package-lock.json" and not is_policy:
+            if "iac" in enabled and path.name not in LOCK_NAMES and not is_policy:
                 if path.suffix.lower() == ".tf":
                     current.extend(_scan_terraform(path, text))
                 elif (
@@ -352,10 +353,7 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
                     current.extend(_scan_dockerfile(path, text))
                 elif path.suffix.lower() in {".yaml", ".yml", ".json"}:
                     current.extend(_scan_yaml_json(path, text))
-            if "dependencies" in enabled and path.name in {
-                "requirements.txt",
-                "package-lock.json",
-            }:
+            if "dependencies" in enabled and path.name in LOCK_NAMES:
                 current.extend(scan_dependencies(path, text))
             # Prefer the Dockerfile-specific rule over the generic assignment rule
             # when both identify the same literal secret on the same source line.

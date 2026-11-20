@@ -119,6 +119,10 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--format", choices=("text", "json"), default="text")
     compare.add_argument("--output", help="write comparison report to this path")
 
+    sbom = sub.add_parser("sbom", help="export resolved dependency inventory as CycloneDX JSON")
+    sbom.add_argument("target", help="lockfile or directory")
+    sbom.add_argument("--output", help="output SBOM JSON path")
+
     init = sub.add_parser("config-init", help="write a starter YAML configuration")
     init.add_argument("--output", default=".cloudsec.yml", help="configuration file path")
     return parser
@@ -312,6 +316,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "sbom":
+            from cloudsec_scanner.sbom import build_sbom
+            rendered = json.dumps(build_sbom(args.target), indent=2) + "\n"
+            if args.output:
+                output = Path(args.output)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(rendered, encoding="utf-8")
+            else:
+                print(rendered, end="")
+            return EXIT_OK
+
         if args.command == "compare":
             comparison = compare_reports(args.baseline, args.current)
             rendered = (

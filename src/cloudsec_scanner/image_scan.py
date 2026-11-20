@@ -152,6 +152,11 @@ def scan_image(image: str, *, trivy_path: str | None = None, timeout: int = 900)
         for item in misconfigurations:
             if not isinstance(item, dict):
                 raise ImageScanError("invalid misconfiguration entry")
+            status = item.get("Status")
+            if status in {"PASS", "EXCEPTION"}:
+                continue
+            if status not in {None, "FAIL"}:
+                raise ImageScanError("Trivy returned an unsupported misconfiguration status")
             result.findings.append(_finding_from_misconfiguration(image, target, item))
 
     # De-duplicate repeated reports for the same check/package and location.

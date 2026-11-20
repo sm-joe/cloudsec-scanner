@@ -275,3 +275,16 @@ Add a stable rule ID, severity, clear risk statement, remediation, relevant prov
 - Secret detection is heuristic; rotate a credential if a real secret may have been committed.
 - Scan errors are returned separately and produce exit code `3`; they must not be interpreted as a successful clean scan.
 - Native Terraform checks in this MVP use conservative text patterns, not a complete HCL parser. Validate important infrastructure with a mature IaC scanner before deployment.
+
+
+### Detection engine: resolved dependencies and SBOM
+
+The dependency scanner supports pinned requirements.txt, npm package-lock v2/v3 and npm-shrinkwrap, Poetry, uv, pnpm v6/v9, Go go.sum and Cargo.lock. Unresolved requirements fail closed during vulnerability scans. Go checksums describe downloaded modules, not necessarily the currently selected build graph. OSV queries transmit package names, versions and ecosystems to the public OSV service; missing severity remains conservatively HIGH.
+
+Generate a local CycloneDX 1.6 JSON inventory without querying OSV:
+
+```bash
+cloudsec sbom . --output reports/sbom.json
+```
+
+This is a resolved dependency inventory, not a complete build-attested or transitive relationship graph. Unsupported ecosystem formats are not certified.

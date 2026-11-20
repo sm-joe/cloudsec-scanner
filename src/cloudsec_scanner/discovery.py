@@ -5,7 +5,9 @@ from __future__ import annotations
 from fnmatch import fnmatch
 from pathlib import Path
 
-SUPPORTED_NAMES = {"Dockerfile", "Containerfile", "requirements.txt", "package-lock.json"}
+from cloudsec_scanner.lockfiles import LOCK_NAMES
+
+SUPPORTED_NAMES = {"Dockerfile", "Containerfile"} | LOCK_NAMES
 SUPPORTED_SUFFIXES = {".tf", ".yaml", ".yml", ".json", ".dockerfile"}
 
 
