@@ -24,3 +24,5 @@ PR #10 merged: alias deduplication, bounded Trivy and image provenance. Next inc
 PR #11 merged after all three workflows passed (240 tests). License and artifact checks are the next increment; signed candidate provenance is subject to main-branch execution and verification. Full schema validation, dependency audit, privacy, identity migration and remaining scanner acceptance are still open.
 
 PRs #12 and #13 merged: licensing, candidate artifact checks, main provenance verified for #12, offline report schemas and fingerprint v2. Final integrity increment addresses remaining cloud privacy, pagination and exception escalation. Stable release remains gated on verification and documented support scope.
+
+PR #14 merged (265 tests); final acceptance increment adds installed dependency audit and upstream notices, and scopes initial distribution to GitHub wheel/source artifacts. Additional providers, full Helm rendering, third-party adapters, PyPI and container distribution are subsequent features, not certified capabilities of v0.1.0.

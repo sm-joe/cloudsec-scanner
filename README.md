@@ -368,3 +368,8 @@ Reports carry fingerprint_version: 2 and include full native resource IDs in fin
 
 
 AWS report sharing: cloudsec cloud aws --region us-east-1 --redact-identifiers --output aws-share.json. Account and asset identifiers are replaced by per-report HMAC pseudonyms; related findings remain joinable within the report. Regions, service types, posture and severities remain visible. The key is not exported; pseudonymized reports are not reproducible or suitable as cross-run baselines. OSV batch pagination follows per-package continuation tokens, rejects repetitions and enforces a finite page/advisory budget.
+
+
+### Stable distribution scope
+
+The initial stable distribution targets Python 3.11–3.13 on Linux, macOS and Windows, packaged as a wheel and source archive. Optional AWS and Trivy integrations require their own credentials/tool installation respectively. Full CIS certification, Helm rendering, arbitrary Terraform expression evaluation and broad provider coverage are not asserted. GitHub release artifacts are the initial distribution target; PyPI publishing and a container image are not part of this verified release. Candidate CI audits actual core and AWS dependency environments and fails closed on audit errors. See THIRD-PARTY-NOTICES.md.

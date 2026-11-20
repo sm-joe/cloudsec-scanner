@@ -8,4 +8,4 @@ Vendored schema snapshots for reproducible offline CI validation, not runtime ne
 - JSF: same repository, schema/jsf-0.82.schema.json, Git blob f46bfb1e52731ad1280123ff3e2bd29bd18d4bc2 (Apache-2.0; Anders Rundgren).
 - CloudSec report schema is maintained in this repository.
 
-Upstream schemas retain their original notices and identifiers. Verify licensing notices against upstream before public distribution.
+Upstream schemas retain their original notices and identifiers. See THIRD-PARTY-NOTICES.md and OASIS-LICENSE.md for upstream attribution and terms. SchemaStore and CycloneDX repository licenses were inspected.
