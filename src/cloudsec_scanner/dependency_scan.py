@@ -7,6 +7,7 @@ import re
 import time
 from urllib.parse import quote
 from pathlib import Path
+from dataclasses import replace
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -325,6 +326,43 @@ def _finding(
     )
 
 
+def _coalesce_advisories(path, dependency, vulnerabilities):
+    """Merge connected OSV alias sets within a single package/version."""
+    groups = []
+    for advisory in vulnerabilities:
+        if not isinstance(advisory, dict) or not isinstance(advisory.get("id"), str) or not advisory["id"].strip():
+            raise DependencyScanError("OSV API returned an invalid advisory")
+        aliases = advisory.get("aliases", [])
+        if not isinstance(aliases, list) or any(not isinstance(a, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}", a) for a in aliases):
+            raise DependencyScanError("OSV API returned invalid advisory aliases")
+        if advisory.get("withdrawn"):
+            continue
+        identifiers = {advisory["id"], *aliases}
+        records = [advisory]
+        overlapping = [group for group in groups if identifiers.intersection(group[0])]
+        for group in overlapping:
+            identifiers.update(group[0])
+            records.extend(group[1])
+            groups.remove(group)
+        groups.append((identifiers, records))
+
+    def rank(identifier):
+        return (0 if identifier.startswith("CVE-") else 1 if identifier.startswith("GHSA-") else 2, identifier)
+
+    findings = []
+    for identifiers, records in groups:
+        canonical = min(identifiers, key=rank)
+        strongest = min(records, key=lambda item: (SEVERITY_ORDER[_vulnerability_severity(item)], item["id"]))
+        finding = _finding(path, dependency, {**strongest, "id": canonical})
+        refs = {"https://osv.dev/vulnerability/" + quote(identifier, safe="") for identifier in identifiers}
+        for record in records:
+            urls = record.get("references", [])
+            if isinstance(urls, list):
+                refs.update(item["url"] for item in urls if isinstance(item, dict) and isinstance(item.get("url"), str) and item["url"].startswith("https://"))
+        findings.append(replace(finding, references=tuple(sorted(refs)), advisory_ids=tuple(sorted(identifiers))))
+    return findings
+
+
 def scan_dependencies(
     path: Path,
     text: str,
@@ -369,10 +407,7 @@ def scan_dependencies(
             if not isinstance(vulnerabilities, list):
                 raise DependencyScanError("OSV API returned an invalid vulns array")
 
-            for vulnerability in vulnerabilities:
-                if not isinstance(vulnerability, dict) or not isinstance(vulnerability.get("id"), str) or not vulnerability["id"].strip():
-                    raise DependencyScanError("OSV API returned an invalid advisory")
-                findings.append(_finding(path, dependency, vulnerability))
+            findings.extend(_coalesce_advisories(path, dependency, vulnerabilities))
 
     # A package can be reported by multiple records; keep each advisory once.
     unique: dict[tuple[str, str, str], Finding] = {}

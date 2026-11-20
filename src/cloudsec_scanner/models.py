@@ -26,11 +26,13 @@ class Finding:
     references: tuple[str, ...] = ()
     compliance: tuple[str, ...] = ()
     evidence: str | None = None
+    advisory_ids: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
         result["references"] = list(self.references)
         result["compliance"] = list(self.compliance)
+        result["advisory_ids"] = list(self.advisory_ids)
         return result
 
 
@@ -46,6 +48,7 @@ class ScanResult:
     scan_profile: str = ""
     project_key: str = ""
     exceptions: list[dict[str, Any]] = field(default_factory=list)
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         from cloudsec_scanner.comparison import finding_identity, _relative_finding
@@ -67,6 +70,7 @@ class ScanResult:
                 },
             },
             "exceptions": self.exceptions,
+            "provenance": self.provenance,
             "findings": [
                 {**finding.to_dict(), "finding_id": finding_identity(_relative_finding(finding.to_dict(), {"target": self.target}))}
                 for finding in sorted(

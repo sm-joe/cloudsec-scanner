@@ -14,3 +14,7 @@ CloudSec is a standalone IaC and supply-chain security CLI. No web dashboard, AP
 | M08 | Stable distribution | Release-candidate packaging/checksums/SBOM workflow and acceptance checklist in progress; license, signed provenance, remaining scanner and distribution acceptance before stable tag |
 
 Partial increments do not certify a whole milestone. Merge only exact-head passing CI with retained security gates. Live cloud credentials are not required for ordinary offline IaC scans.
+
+## Final acceptance hardening
+
+P0 alias deduplication and external scanner integrity plus initial P1 image provenance are implemented in the release-hardening increment, pending CI. Remaining P0 coverage and licensing/artifact verification, P1 schema validation, AWS metrics, full native resource identity, report privacy and rule depth must be completed before stable release.

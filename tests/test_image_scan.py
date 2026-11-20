@@ -36,8 +36,8 @@ def test_maps_trivy_vulnerability_and_misconfiguration(monkeypatch):
     }
     monkeypatch.setattr("cloudsec_scanner.image_scan.shutil.which", lambda _: "trivy")
     monkeypatch.setattr(
-        "cloudsec_scanner.image_scan.subprocess.run",
-        lambda *args, **kwargs: CompletedProcess(args[0], 0, json.dumps(payload), ""),
+        "cloudsec_scanner.image_scan._run_json",
+        lambda *args, **kwargs: payload,
     )
 
     result = scan_image("alpine:3.20")
@@ -59,19 +59,17 @@ def test_requires_trivy(monkeypatch):
 
 def test_rejects_malformed_trivy_json(monkeypatch):
     monkeypatch.setattr("cloudsec_scanner.image_scan.shutil.which", lambda _: "trivy")
-    monkeypatch.setattr(
-        "cloudsec_scanner.image_scan.subprocess.run",
-        lambda *args, **kwargs: CompletedProcess(args[0], 0, "{broken", ""),
-    )
+    def bad(*args, **kwargs):
+        raise ImageScanError("Trivy returned malformed JSON")
+    monkeypatch.setattr("cloudsec_scanner.image_scan._run_json", bad)
     with pytest.raises(ImageScanError, match="malformed JSON"):
         scan_image("alpine:3.20")
 
 
 def test_rejects_failed_trivy_execution(monkeypatch):
     monkeypatch.setattr("cloudsec_scanner.image_scan.shutil.which", lambda _: "trivy")
-    monkeypatch.setattr(
-        "cloudsec_scanner.image_scan.subprocess.run",
-        lambda *args, **kwargs: CompletedProcess(args[0], 1, "", "image not found"),
-    )
+    def bad(*args, **kwargs):
+        raise ImageScanError("Trivy image scan failed")
+    monkeypatch.setattr("cloudsec_scanner.image_scan._run_json", bad)
     with pytest.raises(ImageScanError, match="Trivy image scan failed"):
         scan_image("missing:tag")

@@ -346,3 +346,8 @@ cloudsec --version
 ```
 
 The release-candidate workflow builds and checks a wheel and source distribution, produces SHA-256 checksums and uploads a CycloneDX inventory of the installed runtime dependencies. The workflow does not publish to PyPI or tag a release. See [release acceptance](docs/release-acceptance.md) for outstanding validation before stable publication.
+
+
+### Release integrity improvements
+
+OSV records linked by explicit aliases are merged per package/version, retain all advisory IDs and use the highest reported severity. This changes vulnerability totals and may change previous advisory fingerprints; regenerate baselines before relying on comparisons. Trivy output and diagnostics are bounded, empty or malformed assessment data fails closed, and upstream exceptions withhold coverage. Image reports include allowlisted digest, OS, scanner version and database timestamp when available; missing provenance is reported as null instead of invented. Raw image environment and build history are not exported.
