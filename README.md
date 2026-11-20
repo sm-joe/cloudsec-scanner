@@ -298,3 +298,25 @@ cloudsec cloud aws --region us-east-1 --output reports/aws-inventory.json
 ```
 
 Uses the normal AWS SDK credential chain (prefer short-lived role credentials). No write operations are performed. The initial adapter inventories EC2 instances, EBS volumes, security groups, RDS instances, ECR repositories and EKS clusters. It checks encryption, administrative ingress, public RDS and EKS exposure, and ECR tag mutability. Coverage is explicitly limited to the requested regions and listed services; it is not a full account compliance assessment. Each failed service collection marks the output incomplete and returns exit code 3, including under --no-fail. A successful collection with HIGH/CRITICAL findings returns 1 unless --no-fail is provided. Live AWS validation requires an authorized account and read-only role. Other providers and services remain future increments.
+
+
+### Platform API — initial development foundation
+
+The optional platform uses FastAPI and SQLAlchemy with a persistent database-backed queue. SQLite is suitable for local development; PostgreSQL is the target for shared deployments. The separate worker runs native scanner jobs. This is not yet a production deployment.
+
+```bash
+pip install '.[platform]'
+mkdir -p workspace/operator
+export CLOUDSEC_WORKSPACE="$PWD/workspace"
+export CLOUDSEC_DATABASE_URL="sqlite:///$PWD/platform.db"
+export CLOUDSEC_API_TOKENS="$(python -c 'import json,secrets; print(json.dumps({secrets.token_urlsafe(48):"operator"}))')"
+uvicorn cloudsec_scanner.platform.api:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+Run the worker in another terminal with the same workspace and database settings:
+
+```bash
+python -m cloudsec_scanner.platform.worker
+```
+
+Provision source files under each principal's directory before submitting scans. Keep workspaces operator-managed and immutable to API clients; the worker currently assumes trusted filesystem provisioning. Bearer tokens are operator-provisioned development credentials, not a substitute for production OIDC, role management, rotation or rate limiting. The API provides project creation/listing, scan scheduling with idempotency keys, status, report retrieval, queued cancellation and dashboard counters. OpenAPI is available at /docs. Durable retry leases, migrations, audit events and production deployment acceptance are pending.

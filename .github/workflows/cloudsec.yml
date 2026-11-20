@@ -28,7 +28,7 @@ jobs:
           cache: pip
 
       - name: Install Scanner and Development Dependencies
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install -e ".[dev,platform]"
 
       - name: Run Lint
         id: lint
