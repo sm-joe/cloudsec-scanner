@@ -10,7 +10,7 @@ CloudSec is a standalone IaC and supply-chain security CLI. No web dashboard, AP
 | M04 | Comprehensive IaC | Initial Terraform plan/CloudFormation/List increment merged; deeper Kubernetes/Helm, ARM, GCP, Docker and input bounds remain |
 | M05 | Supply chain | OSV advisory details, CVSS and Composer/Gradle/Bundler increment merged; external tool adapters and full SBOM schema acceptance remain |
 | M06 | CLI policy/reporting | Exact expiring exceptions and emitted fingerprints merged in initial increment; rule catalog/versioning, SARIF schema validation and complete coverage remain |
-| M07 | Hardening | Initial input hardening, atomic reports, portability matrix and wheel acceptance; performance, dependency security, signed artifacts remain |
-| M08 | Stable distribution | License, docs, wheel/container, signed release and fresh installation acceptance |
+| M07 | Hardening | Merged input hardening, atomic reports, portability matrix and wheel acceptance; performance, dependency security, signed artifacts remain |
+| M08 | Stable distribution | Release-candidate packaging/checksums/SBOM workflow and acceptance checklist in progress; license, signed provenance, remaining scanner and distribution acceptance before stable tag |
 
 Partial increments do not certify a whole milestone. Merge only exact-head passing CI with retained security gates. Live cloud credentials are not required for ordinary offline IaC scans.
