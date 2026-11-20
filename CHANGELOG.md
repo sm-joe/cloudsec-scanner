@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.1.0
 
 - Structured Terraform and Terraform plan checks, selected CloudFormation, Kubernetes, ARM, GCP and Dockerfile rules.
 - Redacted secret findings; resolved dependency inventories and OSV advisory enrichment with CVSS.
@@ -8,4 +8,7 @@
 - JSON, SARIF and terminal reporting; stable finding identities, baseline gating and expiring exceptions.
 - Bounded parsing and atomic report writes; tested wheel installation on Linux, Windows and macOS.
 
-This is release preparation, not a published stable release. See docs/production-roadmap.md for outstanding acceptance.
+- Coverage records, resource fingerprints, OSV pagination and alias merging, Trivy provenance, AWS pseudonymization and schema-validation tests.
+- Severity-bound exception policies (v2), strict runtime dependency auditing, wheel/source licensing, checksums and signed provenance.
+
+Publication is gated by the exact-main release workflow. See docs/releases/v0.1.0.md for scope and installation.

@@ -1,6 +1,6 @@
 # Cloud Security Scanner
 
-A Python 3 CLI for early detection of cloud infrastructure and configuration security issues. The current MVP includes a modular provider-specific rule package for selected AWS CloudFormation, Azure ARM, GCP configuration, Terraform, Kubernetes, Dockerfile, and secret patterns, with normalized text/JSON/SARIF reporting and a GitHub Actions example.
+A Python 3 CLI for early detection of cloud infrastructure and configuration security issues. The CLI includes a modular provider-specific rule package for selected AWS CloudFormation, Azure ARM, GCP configuration, Terraform, Kubernetes, Dockerfile, and secret patterns, with normalized text/JSON/SARIF reporting and a GitHub Actions example.
 
 > **Scope and accuracy:** A clean scan means only that the enabled rules did not detect a known pattern. It is not proof that a system is secure. The current native rules are intentionally a small first ruleset; do not treat this release as equivalent to Checkov, Trivy, Gitleaks, or a full CIS benchmark audit.
 
@@ -117,7 +117,7 @@ scanners: [iac, secrets]
 | `DOCKER-004` | No explicit `USER` instruction | Medium |
 | `SEC-SECRET-001..004` | Selected AWS/GitHub credential and private-key patterns | High |
 
-The original CloudFormation public-read starter rule is `AWS-CF-001`. Additional Stage 2 rules are listed below. Rule locations are best-effort in this MVP; line numbers are estimated from matching text, not a full source-span parser. Helm files are discovered and parsed as YAML where possible, but Helm template expressions are not rendered in this release.
+The original CloudFormation public-read starter rule is `AWS-CF-001`. Additional Stage 2 rules are listed below. Rule locations are best-effort in this release; line numbers are estimated from matching text, not a full source-span parser. Helm files are discovered and parsed as YAML where possible, but Helm template expressions are not rendered in this release.
 
 ### Stage 2 provider-specific rules
 
@@ -253,9 +253,9 @@ Each finding includes a stable rule ID, title, severity, message, path, best-eff
 
 ## Implemented vs planned
 
-**Implemented in this MVP:** Python package and CLI; file/directory discovery; structured Terraform HCL rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; stable JSON report comparison; comparison-based CI gate for new findings and severity escalations; GitHub Actions test, scan, report artifact, and SARIF publication workflow; local SQLite scan history and lifecycle/trend commands.
+**Implemented:** Python package and CLI; file/directory discovery; structured Terraform HCL rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; stable JSON report comparison; comparison-based CI gate for new findings and severity escalations; GitHub Actions test, scan, report artifact, and SARIF publication workflow; local SQLite scan history and lifecycle/trend commands.
 
-**Not yet implemented:** comprehensive Azure/GCP rule coverage; full CIS benchmark coverage; Terraform plan/expression evaluation and Helm template rendering; complete CloudFormation resource/property coverage; broad secret entropy/context analysis; additional dependency ecosystem coverage and offline OSV database updates; external scanner adapters; policy exceptions with expiry; loadable third-party rule packs; full SARIF schema validation and extensive integration/regression coverage.
+**Outside the initial stable scope:** comprehensive provider and CIS coverage, arbitrary Terraform expression evaluation, Helm rendering, offline OSV database updates, broader dependency ecosystems, additional external adapters and third-party rule packs.
 
 ## Development checks
 
@@ -345,7 +345,7 @@ python -m pip install dist/cloudsec_scanner-0.1.0-py3-none-any.whl
 cloudsec --version
 ```
 
-The release-candidate workflow builds and checks a wheel and source distribution, produces SHA-256 checksums and uploads a CycloneDX inventory of the installed runtime dependencies. The workflow does not publish to PyPI or tag a release. See [release acceptance](docs/release-acceptance.md) for outstanding validation before stable publication.
+The release-candidate workflow builds and checks a wheel and source distribution, produces SHA-256 checksums and uploads a CycloneDX inventory of the installed runtime dependencies. The workflow does not publish to PyPI. Initial stable GitHub publication is gated on exact-main security, portability, runtime audit, artifact integrity and signed provenance. See [release acceptance](docs/release-acceptance.md) for outstanding validation before stable publication.
 
 
 ### Release integrity improvements
@@ -373,3 +373,6 @@ AWS report sharing: cloudsec cloud aws --region us-east-1 --redact-identifiers -
 ### Stable distribution scope
 
 The initial stable distribution targets Python 3.11–3.13 on Linux, macOS and Windows, packaged as a wheel and source archive. Optional AWS and Trivy integrations require their own credentials/tool installation respectively. Full CIS certification, Helm rendering, arbitrary Terraform expression evaluation and broad provider coverage are not asserted. GitHub release artifacts are the initial distribution target; PyPI publishing and a container image are not part of this verified release. Candidate CI audits actual core and AWS dependency environments and fails closed on audit errors. See THIRD-PARTY-NOTICES.md.
+
+
+Download stable distributions from [GitHub Releases](https://github.com/sm-joe/cloudsec-scanner/releases). Candidate artifacts are not stable releases until publication succeeds.

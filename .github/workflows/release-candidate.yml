@@ -105,3 +105,77 @@ jobs:
             dist/*.tar.gz
             dist/runtime-sbom.json
             dist/SHA256SUMS
+
+  publish-stable:
+    # The initial stable release is explicitly authorized. Never publish from a PR,
+    # a fork, a manual dispatch, or an unverified/rebuilt artifact.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'sm-joe/cloudsec-scanner'
+    needs: [package, attest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: cloudsec-stable-v0.1.0
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - name: Check publication state
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          # List the specific tag through a successful API request. Authorization
+          # and network failures must not be mistaken for "release absent".
+          state="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.tag_name == "v0.1.0") | [.draft,.prerelease] | @tsv')"
+          if [[ "$state" == $'false\tfalse' ]]; then
+            echo "Stable release already exists; no mutation."
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+          elif [[ -n "$state" ]]; then
+            echo "Existing draft or prerelease requires explicit review." >&2
+            exit 1
+          else
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.state.outputs.publish == 'true'
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require exact-main security and portability gates
+        if: steps.state.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/wait_release_gates.py
+      - uses: actions/download-artifact@v7
+        if: steps.state.outputs.publish == 'true'
+        with:
+          name: cloudsec-release-candidate-${{ github.run_id }}
+          path: dist
+      - name: Verify exact candidate before publishing
+        if: steps.state.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_release_artifacts.py
+          for artifact in dist/*.whl dist/*.tar.gz dist/runtime-sbom.json dist/SHA256SUMS; do
+            gh attestation verify "$artifact" --repo "$GH_REPO" --source-ref refs/heads/main --source-digest "$RELEASE_SHA" --signer-workflow "$GH_REPO/.github/workflows/release-candidate.yml"
+          done
+      - name: Publish stable v0.1.0
+        if: steps.state.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only the current main head may publish. Refuse preexisting tags.
+          current="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)"
+          [[ "$current" == "$RELEASE_SHA" ]]
+          refs="$(gh api "repos/$GH_REPO/git/matching-refs/tags/v0.1.0" --jq '.[] | select(.ref == "refs/tags/v0.1.0") | .ref')"
+          [[ -z "$refs" ]]
+          gh release create v0.1.0 --target "$RELEASE_SHA" --title "CloudSec Scanner v0.1.0" --notes-file docs/releases/v0.1.0.md --latest dist/*.whl dist/*.tar.gz dist/runtime-sbom.json dist/SHA256SUMS
+          gh release view v0.1.0 --json tagName,isDraft,isPrerelease,assets,url
