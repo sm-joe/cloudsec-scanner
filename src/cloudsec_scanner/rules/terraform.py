@@ -60,6 +60,10 @@ def scan_terraform_document(path: Path, text: str) -> list[Finding]:
     except Exception as exc:
         raise ValueError("invalid or excessively complex Terraform HCL") from exc
 
+    return evaluate_terraform_resources(path, document, text)
+
+
+def evaluate_terraform_resources(path: Path, document: dict, text: str = "") -> list[Finding]:
     findings: list[Finding] = []
     aws = "CIS AWS Foundations Benchmark"
     azure = "Microsoft Cloud Security Benchmark"
