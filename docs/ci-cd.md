@@ -2,7 +2,7 @@
 
 ## Repository security workflow
 
-`../.github/workflows/cloudsec.yml` runs on pull requests, pushes to `main`/`master`, and manual dispatch. It installs the package with development dependencies, runs Ruff and the test suite, and generates JSON and SARIF reports.
+`../.github/workflows/cloudsec.yml` runs on pull requests, pushes to `main`, and manual dispatch. It installs the package with development dependencies, runs Ruff and the test suite, and generates JSON and SARIF reports.
 
 For pull requests and commits with a usable parent revision, the workflow also:
 
@@ -15,7 +15,7 @@ For pull requests and commits with a usable parent revision, the workflow also:
 
 The baseline scan uses the scanner version from the current revision, so the comparison focuses on target findings rather than differences between scanner versions. A first commit without a parent cannot be compared; that run still tests and scans the current revision, but has no baseline regression gate. Scanner execution errors, failed tests/lint, baseline checkout/scan errors, comparison errors, and gate violations fail the workflow. SARIF publication itself is best-effort; the report artifact remains available if publishing is unavailable.
 
-The workflow requires `contents: read`, `pull-requests: read`, and `security-events: write`. No cloud credentials are needed for local file scanning. After the first successful run, configure the repository's branch protection/ruleset to require the **Test and scan** status check; workflow files do not enable branch protection by themselves.
+The workflow requires `contents: read`, `pull-requests: read`, and `security-events: write`. No cloud credentials are needed for local file scanning. After the first successful run, configure the repository's branch protection/ruleset to require the **Test and Scan** status check; workflow files do not enable branch protection by themselves.
 
 The regression threshold defaults to `HIGH`. To include MEDIUM findings, change the gate step to `python scripts/ci_gate.py reports/comparison.json --severity MEDIUM`.
 
@@ -26,13 +26,13 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ruff check src tests scripts
 mkdir -p reports
-cloudsec scan . --format json --output reports/current.json --no-fail
-cloudsec scan ../baseline-checkout --format json --output reports/baseline.json --no-fail
+cloudsec scan . --config .cloudsec-ci.yml --format json --output reports/current.json --no-fail --no-history
+cloudsec scan ../baseline-checkout --config .cloudsec-ci.yml --format json --output reports/baseline.json --no-fail --no-history
 cloudsec compare reports/baseline.json reports/current.json --format json --output reports/comparison.json
 python scripts/ci_gate.py reports/comparison.json --severity HIGH
 ```
 
-Replace `<baseline-directory>` with a checkout or working tree of the target/base revision. The CI helper consumes the JSON output of `cloudsec compare`; it does not accept SARIF as comparison input.
+Replace `../baseline-checkout` with a checkout or working tree of the target/base revision. The CI helper consumes the JSON output of `cloudsec compare`; it does not accept SARIF as comparison input.
 
 
 [Back to README](../README.md)

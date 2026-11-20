@@ -15,13 +15,12 @@ image-report-current.json
 image-report.json
 image-report.sarif
 comparison-report.json
-README.md.1
-stage2-reconciled-report.json
-stage2-report.json
-.github/workflows/cloudsec.yml.og
 
 # CI/local scan artifacts
 reports/
+baseline-repo/
+*.log
+.coverage.*
 
 # Local SQLite scan history
 *.db
