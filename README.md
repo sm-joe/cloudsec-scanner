@@ -74,7 +74,7 @@ python -m pip install "https://github.com/sm-joe/cloudsec-scanner/releases/downl
 cloudsec --version
 ```
 
-Version v0.1.0 includes the refreshed terminal presentation after the one-time release refresh succeeds. Existing installations of the original v0.1.0 must reinstall the wheel with `--force-reinstall --no-cache-dir`; the version number is intentionally unchanged. Verify the current release checksums before installation.
+Version v0.1.0 includes the refreshed terminal presentation. Existing installations of the original v0.1.0 must reinstall the wheel with `--force-reinstall --no-cache-dir`; the version number is intentionally unchanged. Verify the current release checksums before installation.
 
 ### Verify release integrity
 
