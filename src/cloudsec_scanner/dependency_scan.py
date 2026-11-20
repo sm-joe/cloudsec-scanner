@@ -230,14 +230,14 @@ def _query_osv_batch(
                 all_ids.add(entry["id"])
                 if len(all_ids) > MAX_ADVISORIES:
                     raise DependencyScanError("OSV advisory budget exceeded")
-            token = result.get("next_page_token")
-            if token is not None and not isinstance(token, str):
+            continuation = result.get("next_page_token")
+            if continuation is not None and not isinstance(continuation, str):
                 raise DependencyScanError("invalid OSV pagination token")
-            if token:
-                if len(token) > 8192 or token in seen_tokens[index]:
+            if continuation:
+                if len(continuation) > 8192 or continuation in seen_tokens[index]:
                     raise DependencyScanError("invalid or repeated OSV pagination token")
-                seen_tokens[index].add(token)
-                next_pending.append((index, {**query, "page_token": token}))
+                seen_tokens[index].add(continuation)
+                next_pending.append((index, {**query, "page_token": continuation}))
         pending = next_pending
     if pending:
         raise DependencyScanError("OSV pagination budget exceeded")
