@@ -274,7 +274,7 @@ Add a stable rule ID, severity, clear risk statement, remediation, relevant prov
 - Never test with real credentials. Use synthetic fixtures.
 - Secret detection is heuristic; rotate a credential if a real secret may have been committed.
 - Scan errors are returned separately and produce exit code `3`; they must not be interpreted as a successful clean scan.
-- Native Terraform checks in this MVP use conservative text patterns, not a complete HCL parser. Validate important infrastructure with a mature IaC scanner before deployment.
+- Native Terraform checks use parsed HCL and do not evaluate arbitrary Terraform expressions. Validate important infrastructure with a mature IaC scanner before deployment.
 
 
 ### Detection engine: resolved dependencies and SBOM
@@ -298,3 +298,15 @@ cloudsec cloud aws --region us-east-1 --output reports/aws-inventory.json
 ```
 
 Uses the normal AWS SDK credential chain (prefer short-lived role credentials). No write operations are performed. The initial adapter inventories EC2 instances, EBS volumes, security groups, RDS instances, ECR repositories and EKS clusters. It checks encryption, administrative ingress, public RDS and EKS exposure, and ECR tag mutability. Coverage is explicitly limited to the requested regions and listed services; it is not a full account compliance assessment. Each failed service collection marks the output incomplete and returns exit code 3, including under --no-fail. A successful collection with HIGH/CRITICAL findings returns 1 unless --no-fail is provided. Live AWS validation requires an authorized account and read-only role. Other providers and services remain future increments.
+
+
+### Offline Terraform plan and rendered manifests
+
+```bash
+terraform show -json tfplan > plan.json
+cloudsec scan plan.json --scanner iac --no-history
+helm template example ./chart > rendered.yaml
+cloudsec scan rendered.yaml --scanner iac --no-history
+```
+
+CloudSec reads Terraform plan format 1.x without invoking Terraform, evaluates supported managed resources in nested modules, and withholds complete coverage for known unresolved security-relevant values. It does not resolve arbitrary expressions or certify unsupported resource types. Plan files may contain sensitive data; store them securely and avoid uploading them. CloudFormation intrinsic tags are parsed as inert data, not evaluated, and Kubernetes List objects are scanned item by item. Helm rendering is currently caller-managed; use trusted local charts and do not execute plugins or fetch dependencies from untrusted sources.

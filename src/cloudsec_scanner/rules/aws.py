@@ -99,17 +99,24 @@ def scan_aws_document(doc: Any, path: Path, text: str) -> list[Finding]:
                             compliance=CIS_AWS,
                         )
                     )
-            elif resource_type == "AWS::EC2::SecurityGroup":
-                for ingress in mappings(properties.get("SecurityGroupIngress")):
-                    cidrs = ingress.get("CidrIp")
-                    port = ingress.get("FromPort")
-                    if cidrs == "0.0.0.0/0" and port in (22, 3389):
+            elif resource_type in {"AWS::EC2::SecurityGroup", "AWS::EC2::SecurityGroupIngress"}:
+                entries = [properties] if resource_type.endswith("Ingress") else mappings(properties.get("SecurityGroupIngress"))
+                for ingress in entries:
+                    public = ingress.get("CidrIp") == "0.0.0.0/0" or ingress.get("CidrIpv6") == "::/0"
+                    protocol = ingress.get("IpProtocol")
+                    low, high = ingress.get("FromPort"), ingress.get("ToPort", ingress.get("FromPort"))
+                    admin = str(protocol) == "-1" or (
+                        protocol in ("tcp", "6", 6, None)
+                        and isinstance(low, int) and isinstance(high, int)
+                        and any(low <= port <= high for port in (22, 3389))
+                    )
+                    if public and admin:
                         findings.append(
                             finding(
                                 "AWS-CF-006",
                                 "Administrative port exposed to the internet",
                                 "HIGH",
-                                f"Security group {logical_id} exposes TCP port {port} to 0.0.0.0/0.",
+                                "A security group ingress permits public administrative traffic.",
                                 path,
                                 text,
                                 rf"{logical_id}\s*:",

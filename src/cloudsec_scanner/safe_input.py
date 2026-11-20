@@ -51,9 +51,41 @@ def validate_document(value, *, max_depth=64, max_nodes=100000):
     walk(value, 0)
 
 
-def safe_yaml_documents(text):
+class CloudFormationLoader(UniqueLoader):
+    """Construct only a fixed allowlist of intrinsic tags as inert data."""
+
+
+_INTRINSICS = {
+    "Ref": "Ref", "Condition": "Condition", "GetAtt": "Fn::GetAtt",
+    "Sub": "Fn::Sub", "Join": "Fn::Join", "If": "Fn::If",
+    "Select": "Fn::Select", "Split": "Fn::Split", "FindInMap": "Fn::FindInMap",
+    "ImportValue": "Fn::ImportValue", "GetAZs": "Fn::GetAZs",
+    "Base64": "Fn::Base64", "Cidr": "Fn::Cidr", "Equals": "Fn::Equals",
+    "And": "Fn::And", "Or": "Fn::Or", "Not": "Fn::Not",
+    "Length": "Fn::Length", "ToJsonString": "Fn::ToJsonString",
+}
+
+
+def _intrinsic(loader, suffix, node):
+    if suffix not in _INTRINSICS:
+        raise ValueError("unsupported YAML tag")
+    if isinstance(node, yaml.ScalarNode):
+        value = loader.construct_scalar(node)
+    elif isinstance(node, yaml.SequenceNode):
+        value = loader.construct_sequence(node)
+    elif isinstance(node, yaml.MappingNode):
+        value = loader.construct_mapping(node)
+    else:
+        raise ValueError("invalid intrinsic node")
+    return {_INTRINSICS[suffix]: value}
+
+
+CloudFormationLoader.add_multi_constructor("!", _intrinsic)
+
+
+def safe_yaml_documents(text, *, cloudformation=False):
     try:
-        docs = list(yaml.load_all(text, Loader=UniqueLoader))
+        docs = list(yaml.load_all(text, Loader=CloudFormationLoader if cloudformation else UniqueLoader))
         for doc in docs:
             validate_document(doc)
         return docs

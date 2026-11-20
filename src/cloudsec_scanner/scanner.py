@@ -23,6 +23,7 @@ from cloudsec_scanner.rules import (
     scan_terraform_document,
 )
 from cloudsec_scanner.secret_detection import scan_secrets
+from cloudsec_scanner.terraform_plan import is_plan, scan_plan
 
 SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("SEC-SECRET-001", re.compile(r"(?i)\bAKIA[0-9A-Z]{16}\b")),
@@ -89,17 +90,33 @@ def _metadata_name(doc: dict) -> str:
     return str(metadata.get("name", "unknown")) if isinstance(metadata, dict) else "unknown"
 
 
-def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
+def _scan_yaml_json(path: Path, text: str, warnings: list[str] | None = None) -> list[Finding]:
     findings: list[Finding] = []
     try:
         if path.suffix.lower() == ".json":
             docs = [json.loads(text)]
         else:
-            docs = safe_yaml_documents(text)
+            docs = safe_yaml_documents(text, cloudformation=True)
     except (json.JSONDecodeError, yaml.YAMLError) as exc:
         raise ValueError(f"malformed YAML/JSON: {exc}") from exc
 
-    for doc in docs:
+    # Kubernetes List objects contain independently identified resources.
+    pending = list(reversed(docs))
+    while pending:
+        doc = pending.pop()
+        if isinstance(doc, dict) and doc.get("kind") == "List" and "apiVersion" in doc:
+            items = doc.get("items")
+            if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+                raise ValueError("invalid Kubernetes List items")
+            validate_document(doc)
+            pending.extend(reversed(items))
+            continue
+        if is_plan(doc):
+            plan_findings, plan_warnings = scan_plan(path, doc)
+            findings.extend(plan_findings)
+            if warnings is not None:
+                warnings.extend(f"{path}: {warning}" for warning in sorted(set(plan_warnings)))
+            continue
         if doc is None:
             continue
         if not isinstance(doc, (dict, list)):
@@ -352,7 +369,7 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
                 ):
                     current.extend(_scan_dockerfile(path, text))
                 elif path.suffix.lower() in {".yaml", ".yml", ".json"}:
-                    current.extend(_scan_yaml_json(path, text))
+                    current.extend(_scan_yaml_json(path, text, result.warnings))
             if "dependencies" in enabled and path.name in LOCK_NAMES:
                 current.extend(scan_dependencies(path, text))
             # Prefer the Dockerfile-specific rule over the generic assignment rule
@@ -378,4 +395,6 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
         except (OSError, ValueError, RecursionError, TypeError, AttributeError) as exc:
             result.errors.append(f"{path}: scan failed ({type(exc).__name__}); check file syntax and scanner configuration")
             result.coverage_complete = False
+    if result.warnings:
+        result.coverage_complete = False
     return result
