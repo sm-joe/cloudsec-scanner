@@ -57,6 +57,7 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
                 "remediation": finding.remediation,
                 "provider": finding.provider,
                 "resource": finding.resource,
+                "resourceId": finding.resource_id,
                 "compliance": list(finding.compliance),
                 "advisoryIds": list(finding.advisory_ids),
             },
@@ -84,6 +85,8 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
                     "coverageComplete": result.coverage_complete and not result.errors,
                     "filesScanned": result.files_scanned,
                     "filesSkipped": result.files_skipped,
+                    "assetsScanned": result.assets_scanned,
+                    "assessments": result.assessments,
                     "warnings": result.warnings,
                     "errors": result.errors,
                     "exceptions": result.exceptions,
@@ -128,6 +131,9 @@ def render_text(result: ScanResult) -> str:
         if f.compliance:
             lines.append(f"  Compliance: {', '.join(f.compliance)}")
         lines.append("")
+    if result.assessments:
+        for status, count in result.to_dict()["summary"]["assessment_counts"].items():
+            lines.append(f"{status}: {count} resource(s)")
     for entry in result.exceptions:
         lines.append(f"Exception {entry['status']}: {entry['finding_id']} (expires {entry['expires']})")
     for warning in result.warnings:

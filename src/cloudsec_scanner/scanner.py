@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from cloudsec_scanner.rules import (
 )
 from cloudsec_scanner.secret_detection import scan_secrets
 from cloudsec_scanner.terraform_plan import is_plan, scan_plan
+from cloudsec_scanner.coverage import structured_coverage, assessment, kube_id
 
 SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("SEC-SECRET-001", re.compile(r"(?i)\bAKIA[0-9A-Z]{16}\b")),
@@ -90,7 +92,7 @@ def _metadata_name(doc: dict) -> str:
     return str(metadata.get("name", "unknown")) if isinstance(metadata, dict) else "unknown"
 
 
-def _scan_yaml_json(path: Path, text: str, warnings: list[str] | None = None) -> list[Finding]:
+def _scan_yaml_json(path: Path, text: str, warnings: list[str] | None = None, assessments=None) -> list[Finding]:
     findings: list[Finding] = []
     try:
         if path.suffix.lower() == ".json":
@@ -112,7 +114,7 @@ def _scan_yaml_json(path: Path, text: str, warnings: list[str] | None = None) ->
             pending.extend(reversed(items))
             continue
         if is_plan(doc):
-            plan_findings, plan_warnings = scan_plan(path, doc)
+            plan_findings, plan_warnings = scan_plan(path, doc, assessments)
             findings.extend(plan_findings)
             if warnings is not None:
                 warnings.extend(f"{path}: {warning}" for warning in sorted(set(plan_warnings)))
@@ -122,6 +124,10 @@ def _scan_yaml_json(path: Path, text: str, warnings: list[str] | None = None) ->
         if not isinstance(doc, (dict, list)):
             continue
         validate_document(doc)
+        coverage = structured_coverage(path, doc)
+        if assessments is not None:
+            assessments.extend(coverage)
+        first_finding = len(findings)
         flattened = list(_walk(doc))
         is_k8s = isinstance(doc, dict) and ("apiVersion" in doc or "kind" in doc)
         is_cf = isinstance(doc, dict) and ("Resources" in doc or "AWSTemplateFormatVersion" in doc)
@@ -239,11 +245,19 @@ def _scan_yaml_json(path: Path, text: str, warnings: list[str] | None = None) ->
         findings.extend(scan_azure_document(doc, path, text))
         findings.extend(scan_gcp_document(doc, path, text))
         findings.extend(scan_kubernetes_document(doc, path, text))
+        for index in range(first_finding, len(findings)):
+            item = findings[index]
+            if item.provider == "Kubernetes" and isinstance(doc, dict):
+                findings[index] = replace(item, resource_id=kube_id(doc))
+            else:
+                matches = [entry["resource_id"] for entry in coverage if item.resource and entry["resource_id"].endswith("." + item.resource)]
+                if len(matches) == 1:
+                    findings[index] = replace(item, resource_id=matches[0])
     return findings
 
 
-def _scan_terraform(path: Path, text: str) -> list[Finding]:
-    return scan_terraform_document(path, text)
+def _scan_terraform(path: Path, text: str, assessments=None) -> list[Finding]:
+    return scan_terraform_document(path, text, assessments)
 
 
 def _scan_dockerfile(path: Path, text: str) -> list[Finding]:
@@ -374,14 +388,15 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
                     pass
             if "iac" in enabled and path.name not in LOCK_NAMES and not is_policy:
                 if path.suffix.lower() == ".tf":
-                    current.extend(_scan_terraform(path, text))
+                    current.extend(_scan_terraform(path, text, result.assessments))
                 elif (
                     path.name in {"Dockerfile", "Containerfile"}
                     or path.suffix.lower() == ".dockerfile"
                 ):
                     current.extend(_scan_dockerfile(path, text))
+                    result.assessments.append(assessment(path, path.name, "Dockerfile", "EVALUATED"))
                 elif path.suffix.lower() in {".yaml", ".yml", ".json"}:
-                    current.extend(_scan_yaml_json(path, text, result.warnings))
+                    current.extend(_scan_yaml_json(path, text, result.warnings, result.assessments))
             if "dependencies" in enabled and path.name in LOCK_NAMES:
                 current.extend(scan_dependencies(path, text))
             # Prefer the Dockerfile-specific rule over the generic assignment rule
@@ -407,6 +422,9 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
         except (OSError, ValueError, RecursionError, TypeError, AttributeError) as exc:
             result.errors.append(f"{path}: scan failed ({type(exc).__name__}); check file syntax and scanner configuration")
             result.coverage_complete = False
+    if any(a["status"] in {"UNSUPPORTED", "UNRESOLVED"} for a in result.assessments):
+        result.coverage_complete = False
+        result.warnings.append("Native IaC assessment includes unsupported or unresolved resources")
     if result.warnings:
         result.coverage_complete = False
     return result

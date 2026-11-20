@@ -351,3 +351,8 @@ The release-candidate workflow builds and checks a wheel and source distribution
 ### Release integrity improvements
 
 OSV records linked by explicit aliases are merged per package/version, retain all advisory IDs and use the highest reported severity. This changes vulnerability totals and may change previous advisory fingerprints; regenerate baselines before relying on comparisons. Trivy output and diagnostics are bounded, empty or malformed assessment data fails closed, and upstream exceptions withhold coverage. Image reports include allowlisted digest, OS, scanner version and database timestamp when available; missing provenance is reported as null instead of invented. Raw image environment and build history are not exported.
+
+
+### Resource assessment coverage
+
+Native IaC reports now distinguish EVALUATED (implemented predicates ran), UNSUPPORTED, UNRESOLVED, and NOT_APPLICABLE resources. Unsupported or unresolved resources make the scan incomplete even with --no-fail. These statuses describe the selected native rules, not complete provider or CIS compliance. Terraform findings include resource_id (full type/name or plan address); Kubernetes findings include API version, kind, namespace and name. Legacy resource remains available for compatibility. AWS inventory reports use assets_scanned instead of files_scanned. Expanded native predicates include public RDS and EKS endpoints, S3 public access blocking, ECR tag mutability, GCP bucket/SQL controls and weak Azure storage TLS.

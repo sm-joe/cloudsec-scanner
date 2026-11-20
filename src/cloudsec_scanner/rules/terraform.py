@@ -10,6 +10,7 @@ import hcl2
 
 from cloudsec_scanner.models import Finding
 from cloudsec_scanner.safe_input import validate_document
+from cloudsec_scanner.coverage import assessment, tf_status
 
 
 def _list(value: Any) -> list:
@@ -53,7 +54,7 @@ def _policy(value: Any) -> Any:
         return None
 
 
-def scan_terraform_document(path: Path, text: str) -> list[Finding]:
+def scan_terraform_document(path: Path, text: str, assessments=None) -> list[Finding]:
     # Normalize Windows CRLF before handing text to the HCL grammar.
     text = text.replace("\r\n", "\n")
     try:
@@ -62,10 +63,10 @@ def scan_terraform_document(path: Path, text: str) -> list[Finding]:
     except Exception as exc:
         raise ValueError("invalid or excessively complex Terraform HCL") from exc
 
-    return evaluate_terraform_resources(path, document, text)
+    return evaluate_terraform_resources(path, document, text, assessments=assessments)
 
 
-def evaluate_terraform_resources(path: Path, document: dict, text: str = "") -> list[Finding]:
+def evaluate_terraform_resources(path: Path, document: dict, text: str = "", *, assessments=None, plan=False) -> list[Finding]:
     findings: list[Finding] = []
     aws = "CIS AWS Foundations Benchmark"
     azure = "Microsoft Cloud Security Benchmark"
@@ -78,11 +79,15 @@ def evaluate_terraform_resources(path: Path, document: dict, text: str = "") -> 
             for name, body in names.items():
                 if not isinstance(body, dict):
                     raise ValueError("invalid Terraform resource body")
+                resource_id = name if plan else f"{kind}.{name}"
+                if assessments is not None:
+                    status, reason = tf_status(kind, body)
+                    assessments.append(assessment(path, resource_id, kind, status, reason))
                 location = re.search(r'resource\s+"' + re.escape(kind) + r'"\s+"' + re.escape(name) + r'"', text)
                 line = text.count("\n", 0, location.start()) + 1 if location else 1
 
                 def add(rule, title, severity, message, fix, provider="AWS", benchmark=aws, category="misconfiguration"):
-                    findings.append(Finding(rule, title, severity, message, str(path), line, name, category, provider, fix, compliance=(benchmark,)))
+                    findings.append(Finding(rule, title, severity, message, str(path), line, name, category, provider, fix, compliance=(benchmark,), resource_id=resource_id))
 
                 if kind in {"aws_s3_bucket_acl", "aws_s3_bucket"} and body.get("acl") in ("public-read", "public-read-write"):
                     add("AWS-TF-001", "Public S3 bucket ACL", "HIGH", "An S3 ACL grants public access.", "Remove public ACLs and configure S3 Block Public Access.")
@@ -96,6 +101,21 @@ def evaluate_terraform_resources(path: Path, document: dict, text: str = "") -> 
                     add("AWS-TF-003", "EBS volume encryption disabled", "HIGH", "EBS encryption is explicitly disabled.", "Enable EBS encryption.")
                 if kind == "aws_db_instance" and body.get("storage_encrypted") is False:
                     add("AWS-TF-004", "RDS storage encryption disabled", "HIGH", "RDS encryption is explicitly disabled.", "Enable storage encryption and plan migration.")
+                if kind == "aws_db_instance" and body.get("publicly_accessible") is True:
+                    add("AWS-TF-006", "RDS is publicly accessible", "HIGH", "Public accessibility is enabled.", "Disable public accessibility and review network access.")
+                if kind == "aws_s3_bucket_public_access_block" and any(body.get(k) is False for k in ("block_public_acls", "ignore_public_acls", "block_public_policy", "restrict_public_buckets")):
+                    add("AWS-TF-007", "S3 public access blocking disabled", "HIGH", "A public access block flag is explicitly disabled.", "Enable all four public access block flags.")
+                if kind == "aws_ecr_repository" and body.get("image_tag_mutability") == "MUTABLE":
+                    add("AWS-TF-008", "ECR image tags mutable", "MEDIUM", "Image tags can be overwritten.", "Set image tag mutability to IMMUTABLE.")
+                if kind == "aws_eks_cluster" and any(isinstance(config, dict) and config.get("endpoint_public_access") is True and _public(config.get("public_access_cidrs")) for config in _list(body.get("vpc_config"))):
+                    add("AWS-TF-009", "EKS endpoint open publicly", "HIGH", "The cluster API allows all public addresses.", "Use a private endpoint or limit public access CIDRs.")
+                if kind == "google_storage_bucket":
+                    if body.get("public_access_prevention") == "inherited":
+                        add("GCP-TF-003", "Bucket public access prevention inherited", "HIGH", "Public access prevention is not enforced at the bucket.", "Set public_access_prevention to enforced.", "GCP", gcp)
+                    if body.get("uniform_bucket_level_access") is False:
+                        add("GCP-TF-004", "Uniform bucket access disabled", "MEDIUM", "Object ACLs may be used.", "Enable uniform bucket-level access.", "GCP", gcp)
+                if kind == "google_sql_database_instance" and any(isinstance(settings, dict) and any(isinstance(ip, dict) and ip.get("ipv4_enabled") is True and any(isinstance(net, dict) and net.get("value") == "0.0.0.0/0" for net in _list(ip.get("authorized_networks"))) for ip in _list(settings.get("ip_configuration"))) for settings in _list(body.get("settings"))):
+                    add("GCP-TF-005", "Cloud SQL public network access", "HIGH", "All IPv4 addresses are authorized.", "Use private connectivity and restricted networks.", "GCP", gcp)
                 if kind == "aws_s3_bucket" and body.get("force_destroy") is True:
                     add("AWS-TF-005", "S3 bucket force destroy enabled", "LOW", "Terraform can destroy a non-empty bucket.", "Disable force_destroy for production buckets.")
                 if kind in {"aws_iam_policy", "aws_iam_role_policy", "aws_iam_user_policy", "aws_iam_group_policy"}:
@@ -103,6 +123,8 @@ def evaluate_terraform_resources(path: Path, document: dict, text: str = "") -> 
                     if isinstance(policy, dict) and any(isinstance(statement, dict) and str(statement.get("Effect", "")).lower() == "allow" and _wild(statement.get("Action")) and _wild(statement.get("Resource")) for statement in _list(policy.get("Statement"))):
                         add("IAM-TF-001", "Wildcard IAM policy permissions", "HIGH", "An Allow statement grants all actions on all resources.", "Scope actions and resources to least privilege.", category="iam")
                 if kind == "azurerm_storage_account":
+                    if body.get("min_tls_version") in {"TLS1_0", "TLS1_1"}:
+                        add("AZ-TF-003", "Storage permits weak TLS", "MEDIUM", "Minimum TLS version is below TLS 1.2.", "Set minimum TLS to TLS1_2.", "Azure", azure)
                     if body.get("enable_https_traffic_only") is False or body.get("https_traffic_only_enabled") is False:
                         add("AZ-TF-001", "Azure storage account permits HTTP", "HIGH", "HTTPS-only traffic is disabled.", "Require HTTPS-only traffic.", "Azure", azure)
                     if body.get("allow_nested_items_to_be_public") is True:

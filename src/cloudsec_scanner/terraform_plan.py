@@ -9,24 +9,8 @@ from cloudsec_scanner.models import Finding
 from cloudsec_scanner.rules.terraform import evaluate_terraform_resources
 from cloudsec_scanner.safe_input import validate_document
 
-CHECK_FIELDS = {
-    "aws_s3_bucket_acl": {"acl"},
-    "aws_s3_bucket": {"acl", "force_destroy"},
-    "aws_security_group_rule": {"type", "cidr_blocks", "ipv6_cidr_blocks"},
-    "aws_vpc_security_group_ingress_rule": {"cidr_ipv4", "cidr_ipv6"},
-    "aws_security_group": {"ingress"},
-    "aws_ebs_volume": {"encrypted"},
-    "aws_db_instance": {"storage_encrypted"},
-    "aws_iam_policy": {"policy"},
-    "aws_iam_role_policy": {"policy"},
-    "aws_iam_user_policy": {"policy"},
-    "aws_iam_group_policy": {"policy"},
-    "azurerm_storage_account": {"enable_https_traffic_only", "https_traffic_only_enabled", "allow_nested_items_to_be_public"},
-    "google_storage_bucket_iam_member": {"member", "members"},
-    "google_storage_bucket_iam_binding": {"member", "members"},
-    "google_storage_bucket_iam_policy": {"member", "members", "policy_data"},
-    "google_compute_firewall": {"source_ranges", "allow", "allowed"},
-}
+from cloudsec_scanner.coverage import TF_FIELDS as CHECK_FIELDS, assessment, tf_status
+
 
 
 def _unknown(value):
@@ -41,7 +25,7 @@ def is_plan(document):
     return isinstance(document, dict) and "format_version" in document and any(key in document for key in ("planned_values", "resource_changes", "terraform_version"))
 
 
-def scan_plan(path: Path, document: dict) -> tuple[list[Finding], list[str]]:
+def scan_plan(path: Path, document: dict, assessments=None) -> tuple[list[Finding], list[str]]:
     validate_document(document)
     version = document.get("format_version")
     if not isinstance(version, str) or version.split(".")[0] != "1":
@@ -91,12 +75,18 @@ def scan_plan(path: Path, document: dict) -> tuple[list[Finding], list[str]]:
             seen.add(address)
             fields = CHECK_FIELDS.get(kind)
             if fields is None:
+                if assessments is not None:
+                    assessments.append(assessment(path, address, kind, "UNSUPPORTED", "No native predicates for this resource type"))
                 continue
             unresolved = unknown.get(address, {})
+            status, reason = tf_status(kind, values)
             if unresolved is True or (isinstance(unresolved, dict) and any(_unknown(unresolved.get(field)) for field in fields)):
+                status, reason = "UNRESOLVED", "Plan contains unknown security-relevant values"
                 warnings.append("Terraform resource has unresolved security-relevant values")
+            if assessments is not None:
+                assessments.append(assessment(path, address, kind, status, reason))
             # Keep full module/index address, never serialize raw plan values.
-            found = evaluate_terraform_resources(path, {"resource": [{kind: {address: values}}]})
+            found = evaluate_terraform_resources(path, {"resource": [{kind: {address: values}}]}, plan=True)
             findings.extend(replace(finding, resource=address) for finding in found)
         for child in children:
             if not isinstance(child, dict):
