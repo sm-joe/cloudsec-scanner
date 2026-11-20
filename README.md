@@ -332,3 +332,17 @@ The exception document uses version: 1 and an exceptions list. Every record requ
 ### Production hardening and portability
 
 JSON mappings reject duplicate keys and non-finite constants; YAML documents have pre-construction alias expansion and depth limits. CLI scan reports are written through a private temporary file and atomic replacement, preserving a previous complete report if publication fails. CI tests Linux, Windows and macOS on Python 3.11–3.13, builds wheels and verifies installed-wheel clean and blocking exit codes in fresh environments. Existing regression checks remain mandatory.
+
+
+## Release installation and integrity
+
+Release candidates are built from the source tree using PEP 517. No web server or database service is required.
+
+```bash
+python -m pip install build
+python -m build
+python -m pip install dist/cloudsec_scanner-0.1.0-py3-none-any.whl
+cloudsec --version
+```
+
+The release-candidate workflow builds and checks a wheel and source distribution, produces SHA-256 checksums and uploads a CycloneDX inventory of the installed runtime dependencies. The workflow does not publish to PyPI or tag a release. See [release acceptance](docs/release-acceptance.md) for outstanding validation before stable publication.
