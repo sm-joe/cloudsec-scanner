@@ -3,7 +3,7 @@ name: Cloud Security Scanner
 on:
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -20,6 +20,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -47,13 +48,13 @@ jobs:
       - name: Scan Current Revision (JSON)
         id: scan_json
         continue-on-error: true
-        run: cloudsec scan . --config .cloudsec-ci.yml --format json --output reports/current.json --no-fail
+        run: cloudsec scan . --config .cloudsec-ci.yml --format json --output reports/current.json --no-fail --no-history
 
       - name: Scan Current Revision (SARIF)
         id: scan_sarif
         if: always()
         continue-on-error: true
-        run: cloudsec scan . --config .cloudsec-ci.yml --format sarif --output reports/current.sarif --no-fail
+        run: cloudsec scan . --config .cloudsec-ci.yml --format sarif --output reports/current.sarif --no-fail --no-history
 
       - name: Resolve Baseline Revision
         id: baseline
@@ -91,12 +92,13 @@ jobs:
           ref: ${{ steps.baseline.outputs.sha }}
           path: baseline-repo
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Scan Baseline Revision
         id: scan_baseline
         if: always() && steps.baseline.outputs.available == 'true' && steps.checkout_baseline.outcome == 'success'
         continue-on-error: true
-        run: cloudsec scan baseline-repo --config .cloudsec-ci.yml --format json --output reports/baseline.json --no-fail
+        run: cloudsec scan baseline-repo --config .cloudsec-ci.yml --format json --output reports/baseline.json --no-fail --no-history
 
       - name: Compare Baseline with Current Scan
         id: compare
@@ -134,6 +136,7 @@ jobs:
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
           SCAN_JSON_OUTCOME: ${{ steps.scan_json.outcome }}
           SCAN_SARIF_OUTCOME: ${{ steps.scan_sarif.outcome }}
+          BASELINE_OUTCOME: ${{ steps.baseline.outcome }}
           BASELINE_AVAILABLE: ${{ steps.baseline.outputs.available }}
           CHECKOUT_BASELINE_OUTCOME: ${{ steps.checkout_baseline.outcome }}
           SCAN_BASELINE_OUTCOME: ${{ steps.scan_baseline.outcome }}
@@ -147,6 +150,7 @@ jobs:
           required = {
               "lint": os.environ.get("LINT_OUTCOME"),
               "tests": os.environ.get("TESTS_OUTCOME"),
+              "baseline resolution": os.environ.get("BASELINE_OUTCOME"),
               "current JSON scan": os.environ.get("SCAN_JSON_OUTCOME"),
               "current SARIF scan": os.environ.get("SCAN_SARIF_OUTCOME"),
           }

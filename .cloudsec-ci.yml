@@ -1,5 +1,6 @@
 # CI-specific exclusions for intentionally vulnerable scanner examples and
-# generated scan reports. Keep these files available to local scanner tests.
+# generated scan reports. Legacy root fixture exclusions are retained for
+# baseline scans of earlier revisions; current fixtures live under tests/.
 exclude:
   - .git/**
   - .venv/**
@@ -15,5 +16,3 @@ exclude:
   - comparison-report.json
   - image-report.json
   - image-report-current.json
-  - stage2-report.json
-  - stage2-reconciled-report.json
