@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from urllib.parse import quote
+from packageurl import PackageURL
 
 from cloudsec_scanner.dependency_scan import parse_dependencies
 from cloudsec_scanner.discovery import discover
 from cloudsec_scanner.config import DEFAULT_CONFIG
 from cloudsec_scanner.lockfiles import LOCK_NAMES
 
-PURL_TYPES = {"PyPI": "pypi", "npm": "npm", "Go": "golang", "crates.io": "cargo"}
+PURL_TYPES = {"PyPI": "pypi", "npm": "npm", "Go": "golang", "crates.io": "cargo", "Packagist": "composer", "Maven": "maven", "RubyGems": "gem"}
 
 
 def build_sbom(target: str):
@@ -33,8 +33,12 @@ def build_sbom(target: str):
             name = package["name"]
             version = package["version"]
             ecosystem = package["ecosystem"]
-            encoded_name = quote(name, safe="/")
-            purl = f"pkg:{PURL_TYPES[ecosystem]}/{encoded_name}@{quote(version, safe='')}"
+            namespace = None
+            if ecosystem == "Maven":
+                namespace, name = name.split(":", 1)
+            elif ecosystem in {"npm", "Go", "Packagist"} and "/" in name:
+                namespace, name = name.rsplit("/", 1)
+            purl = PackageURL(type=PURL_TYPES[ecosystem], namespace=namespace, name=name, version=version).to_string()
             components[purl] = {"type": "library", "bom-ref": purl, "name": name, "version": version, "purl": purl}
     if not manifests:
         raise ValueError("no supported resolved dependency files found")

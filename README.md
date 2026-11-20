@@ -310,3 +310,8 @@ cloudsec scan rendered.yaml --scanner iac --no-history
 ```
 
 CloudSec reads Terraform plan format 1.x without invoking Terraform, evaluates supported managed resources in nested modules, and withholds complete coverage for known unresolved security-relevant values. It does not resolve arbitrary expressions or certify unsupported resource types. Plan files may contain sensitive data; store them securely and avoid uploading them. CloudFormation intrinsic tags are parsed as inert data, not evaluated, and Kubernetes List objects are scanned item by item. Helm rendering is currently caller-managed; use trusted local charts and do not execute plugins or fetch dependencies from untrusted sources.
+
+
+### Supply-chain vulnerability enrichment
+
+OSV batch matches are resolved to individual advisory documents before severity evaluation. CVSS v3/v4 vectors and recognized database severity labels are supported; conflicting labels select the higher severity, and missing or invalid severity never implies a clean result. Transient network failures are retried within a bounded budget; failed enrichment makes the scan incomplete. Withdrawn advisories are omitted. Composer, Gradle and registry-based Bundler lockfiles are additionally supported. Non-registry Bundler sources fail closed; the SBOM is a package inventory, not a complete dependency graph.
