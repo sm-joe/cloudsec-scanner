@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Redesigned CLI terminal scan results with actual rule IDs and finding fingerprints, status colors, truthful evaluated-resource pass counts, and plain-text exports.
+
+
 ## 0.1.0
 
 - Structured Terraform and Terraform plan checks, selected CloudFormation, Kubernetes, ARM, GCP and Dockerfile rules.

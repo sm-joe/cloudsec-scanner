@@ -26,7 +26,7 @@ from cloudsec_scanner.history import (
     record_scan,
 )
 from cloudsec_scanner.models import SEVERITY_ORDER
-from cloudsec_scanner.report import write_report
+from cloudsec_scanner.report import write_report, render_text, terminal_color
 from cloudsec_scanner.scanner import scan_target
 
 EXIT_OK = 0
@@ -38,6 +38,7 @@ EXIT_ERROR = 3
 def _add_report_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--format", choices=("text", "json", "sarif"), default="text")
     parser.add_argument("--output", help="write report to this path")
+    parser.add_argument("--color", choices=("auto", "always", "never"), default="auto", help="terminal text colors; NO_COLOR disables colors")
     parser.add_argument("--relative-paths", action="store_true", help="remove local absolute scan roots from exported reports")
     parser.add_argument("--exceptions", help="explicit YAML policy with expiring finding exceptions")
     parser.add_argument(
@@ -175,8 +176,11 @@ def _finish_report(result, args, config, scan_type: str) -> int:
     if args.relative_paths:
         from cloudsec_scanner.privacy import relative_report
         export_result = relative_report(result)
-    rendered = write_report(export_result, args.format, args.output)
-    if args.format == "text" or not args.output:
+    exclusions = bool(config.get("exclude_rules"))
+    rendered = write_report(export_result, args.format, args.output, exclusions=exclusions)
+    if args.format == "text":
+        print(render_text(export_result, color=terminal_color(args.color, sys.stdout), exclusions=exclusions), end="")
+    elif not args.output:
         print(rendered, end="")
 
     if not args.no_history:

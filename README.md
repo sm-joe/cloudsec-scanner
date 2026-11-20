@@ -376,3 +376,8 @@ The initial stable distribution targets Python 3.11–3.13 on Linux, macOS and W
 
 
 Download stable distributions from [GitHub Releases](https://github.com/sm-joe/cloudsec-scanner/releases). Candidate artifacts are not stable releases until publication succeeds.
+
+
+### Terminal scan presentation
+
+The redesigned text report shows numbered red FAILED findings, their actual rule IDs and full finding fingerprints, file/resource context, and green PASSED resource assessments when recorded native evaluation supports that outcome. Pass counts are resource counts, not per-rule counts, and are withheld for incomplete coverage or rule exclusions. A finding with an accepted exception remains visible. Colors are automatic on supported interactive terminals; use `--color always` or `--color never` to override auto detection. `NO_COLOR` disables colors. Text report files, JSON and SARIF remain free of terminal escape sequences. Exit codes and gating semantics are unchanged.
