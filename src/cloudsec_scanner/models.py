@@ -45,8 +45,11 @@ class ScanResult:
     coverage_complete: bool = True
     scan_profile: str = ""
     project_key: str = ""
+    exceptions: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        from cloudsec_scanner.comparison import finding_identity, _relative_finding
+
         return {
             "schema_version": "1.0",
             "tool": {"name": "cloudsec-scanner", "version": __version__},
@@ -63,8 +66,9 @@ class ScanResult:
                     for severity in SEVERITY_ORDER
                 },
             },
+            "exceptions": self.exceptions,
             "findings": [
-                finding.to_dict()
+                {**finding.to_dict(), "finding_id": finding_identity(_relative_finding(finding.to_dict(), {"target": self.target}))}
                 for finding in sorted(
                     self.findings,
                     key=lambda f: (

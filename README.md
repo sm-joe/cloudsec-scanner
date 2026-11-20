@@ -315,3 +315,15 @@ CloudSec reads Terraform plan format 1.x without invoking Terraform, evaluates s
 ### Supply-chain vulnerability enrichment
 
 OSV batch matches are resolved to individual advisory documents before severity evaluation. CVSS v3/v4 vectors and recognized database severity labels are supported; conflicting labels select the higher severity, and missing or invalid severity never implies a clean result. Transient network failures are retried within a bounded budget; failed enrichment makes the scan incomplete. Withdrawn advisories are omitted. Composer, Gradle and registry-based Bundler lockfiles are additionally supported. Non-registry Bundler sources fail closed; the SBOM is a package inventory, not a complete dependency graph.
+
+
+### Expiring finding exceptions
+
+Use a separately reviewed YAML exception file with exact finding fingerprints from a JSON scan report. Exceptions never remove the original findings or change their severity. They only affect CLI failure gating; SARIF reports retain accepted suppressions. Unmatched, ambiguous and expired exceptions remain visible and do not waive any finding. Expiration is inclusive through the stated UTC date. Reviewer identity is operator-supplied metadata, not cryptographically authenticated. Keep the policy file outside the scanned source or explicitly exclude its exact path to avoid treating policy text as application input.
+
+```bash
+cloudsec scan infrastructure/ --format json --output report.json --no-history
+cloudsec scan infrastructure/ --exceptions reviewed-exceptions.yaml --no-history
+```
+
+The exception document uses version: 1 and an exceptions list. Every record requires finding_id (64 lowercase hex characters), expires (ISO date), reason and approved_by. Review exceptions in source control and protect policy changes through repository controls. The repository regression gate intentionally evaluates raw findings independently of CLI exceptions.

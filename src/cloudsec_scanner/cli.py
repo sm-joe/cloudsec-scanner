@@ -38,6 +38,7 @@ EXIT_ERROR = 3
 def _add_report_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--format", choices=("text", "json", "sarif"), default="text")
     parser.add_argument("--output", help="write report to this path")
+    parser.add_argument("--exceptions", help="explicit YAML policy with expiring finding exceptions")
     parser.add_argument(
         "--severity", choices=tuple(SEVERITY_ORDER), help="override configured failure threshold"
     )
@@ -147,6 +148,10 @@ def _apply_policy(result, config) -> None:
 
 def _finish_report(result, args, config, scan_type: str) -> int:
     _apply_policy(result, config)
+    accepted = set()
+    if args.exceptions:
+        from cloudsec_scanner.policy import apply_exceptions, load_exceptions
+        accepted = apply_exceptions(result, load_exceptions(args.exceptions))
 
     baseline_gate = bool(args.fail_on_new or config.get("fail_on_new_findings", False))
     if baseline_gate and not args.baseline:
@@ -193,7 +198,7 @@ def _finish_report(result, args, config, scan_type: str) -> int:
         blocking_findings = [
             item
             for item in comparison["new"] + [entry for entry in comparison["changed"] if SEVERITY_ORDER[entry["current_severity"]] < SEVERITY_ORDER[entry["previous_severity"]]]
-            if SEVERITY_ORDER.get(
+            if item["finding_id"] not in accepted and SEVERITY_ORDER.get(
                 str(item["finding"].get("severity", "INFO")).upper(), 99
             )
             <= threshold_order
@@ -205,8 +210,11 @@ def _finish_report(result, args, config, scan_type: str) -> int:
         )
         return EXIT_FINDINGS if blocking_findings else EXIT_OK
 
+    from cloudsec_scanner.comparison import finding_identity, _relative_finding
     has_blocking = any(
-        SEVERITY_ORDER.get(f.severity, 99) <= threshold_order for f in result.findings
+        SEVERITY_ORDER.get(f.severity, 99) <= threshold_order
+        and finding_identity(_relative_finding(f.to_dict(), {"target": result.target})) not in accepted
+        for f in result.findings
     )
     if args.no_fail:
         return EXIT_OK
