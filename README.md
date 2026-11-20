@@ -327,3 +327,8 @@ cloudsec scan infrastructure/ --exceptions reviewed-exceptions.yaml --no-history
 ```
 
 The exception document uses version: 1 and an exceptions list. Every record requires finding_id (64 lowercase hex characters), expires (ISO date), reason and approved_by. Review exceptions in source control and protect policy changes through repository controls. The repository regression gate intentionally evaluates raw findings independently of CLI exceptions.
+
+
+### Production hardening and portability
+
+JSON mappings reject duplicate keys and non-finite constants; YAML documents have pre-construction alias expansion and depth limits. CLI scan reports are written through a private temporary file and atomic replacement, preserving a previous complete report if publication fails. CI tests Linux, Windows and macOS on Python 3.11–3.13, builds wheels and verifies installed-wheel clean and blocking exit codes in fresh environments. Existing regression checks remain mandatory.

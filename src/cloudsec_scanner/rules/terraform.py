@@ -54,6 +54,8 @@ def _policy(value: Any) -> Any:
 
 
 def scan_terraform_document(path: Path, text: str) -> list[Finding]:
+    # Normalize Windows CRLF before handing text to the HCL grammar.
+    text = text.replace("\r\n", "\n")
     try:
         document = hcl2.loads(text)
         validate_document(document)

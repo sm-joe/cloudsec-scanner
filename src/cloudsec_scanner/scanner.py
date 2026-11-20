@@ -14,7 +14,7 @@ from cloudsec_scanner.dependency_scan import scan_dependencies
 from cloudsec_scanner.lockfiles import LOCK_NAMES
 from cloudsec_scanner.discovery import discover
 from cloudsec_scanner.models import Finding, ScanResult
-from cloudsec_scanner.safe_input import validate_document, safe_yaml_documents
+from cloudsec_scanner.safe_input import validate_document, safe_yaml_documents, safe_json_document
 from cloudsec_scanner.rules import (
     scan_aws_document,
     scan_azure_document,
@@ -94,7 +94,7 @@ def _scan_yaml_json(path: Path, text: str, warnings: list[str] | None = None) ->
     findings: list[Finding] = []
     try:
         if path.suffix.lower() == ".json":
-            docs = [json.loads(text)]
+            docs = [safe_json_document(text)]
         else:
             docs = safe_yaml_documents(text, cloudformation=True)
     except (json.JSONDecodeError, yaml.YAMLError) as exc:
@@ -357,9 +357,20 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
             if path.name in {".cloudsec.yml", ".cloudsec.yaml", ".cloudsec-ci.yml"}:
                 from cloudsec_scanner.config import DEFAULT_CONFIG
                 try:
-                    policy_docs = list(yaml.safe_load_all(text))
+                    from cloudsec_scanner.safe_input import _preflight_yaml
+                    policy_docs = []
+                    loader = yaml.SafeLoader(text)
+                    try:
+                        while loader.check_node():
+                            if policy_docs:
+                                raise ValueError("multiple policy documents")
+                            node = loader.get_node()
+                            _preflight_yaml(node)
+                            policy_docs.append(loader.construct_document(node))
+                    finally:
+                        loader.dispose()
                     is_policy = len(policy_docs) == 1 and isinstance(policy_docs[0], dict) and set(policy_docs[0]) <= set(DEFAULT_CONFIG)
-                except (yaml.YAMLError, RecursionError, TypeError):
+                except (yaml.YAMLError, RecursionError, TypeError, ValueError):
                     pass
             if "iac" in enabled and path.name not in LOCK_NAMES and not is_policy:
                 if path.suffix.lower() == ".tf":

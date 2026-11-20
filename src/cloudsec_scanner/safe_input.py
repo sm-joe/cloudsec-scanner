@@ -1,6 +1,7 @@
 """Bounded parsing of untrusted YAML and JSON documents."""
 from __future__ import annotations
 
+import json
 import yaml
 
 
@@ -83,11 +84,63 @@ def _intrinsic(loader, suffix, node):
 CloudFormationLoader.add_multi_constructor("!", _intrinsic)
 
 
+def safe_json_document(text):
+    """Reject ambiguous mappings, NaN and excessive structural complexity."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON mapping key")
+            result[key] = value
+        return result
+
+    def invalid_constant(_):
+        raise ValueError("non-finite JSON number")
+
+    try:
+        value = json.loads(text, object_pairs_hook=unique, parse_constant=invalid_constant)
+        validate_document(value)
+        return value
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError("invalid or excessively complex JSON") from exc
+
+
+def _preflight_yaml(node, *, max_nodes=100000, max_depth=64):
+    # Count expanded nodes BEFORE construction and flatten_mapping.
+    pending = [(node, 0)]
+    count = 0
+    while pending:
+        current, depth = pending.pop()
+        count += 1
+        if count > max_nodes or depth > max_depth:
+            raise ValueError("YAML complexity limit exceeded")
+        if isinstance(current, yaml.MappingNode):
+            merges = 0
+            for key, child in current.value:
+                if key.tag == "tag:yaml.org,2002:merge":
+                    merges += 1
+                    if merges > 1:
+                        raise ValueError("duplicate YAML merge key")
+                pending.extend(((key, depth + 1), (child, depth + 1)))
+        elif isinstance(current, yaml.SequenceNode):
+            pending.extend((child, depth + 1) for child in current.value)
+
+
 def safe_yaml_documents(text, *, cloudformation=False):
     try:
-        docs = list(yaml.load_all(text, Loader=CloudFormationLoader if cloudformation else UniqueLoader))
-        for doc in docs:
-            validate_document(doc)
-        return docs
+        loader = (CloudFormationLoader if cloudformation else UniqueLoader)(text)
+        try:
+            docs = []
+            while loader.check_node():
+                if len(docs) >= 1000:
+                    raise ValueError("document count limit exceeded")
+                node = loader.get_node()
+                _preflight_yaml(node)
+                doc = loader.construct_document(node)
+                validate_document(doc)
+                docs.append(doc)
+            return docs
+        finally:
+            loader.dispose()
     except (yaml.YAMLError, RecursionError, TypeError) as exc:
         raise ValueError("invalid or excessively complex YAML") from exc
