@@ -360,3 +360,8 @@ Native IaC reports now distinguish EVALUATED (implemented predicates ran), UNSUP
 ### License and candidate verification
 
 CloudSec Scanner is licensed under [Apache-2.0](LICENSE). Release candidate archives contain the license and SPDX metadata. Candidate CI verifies archive contents and SHA-256 checksums; main-branch candidate builds additionally request GitHub build provenance. Download the candidate artifact and run `sha256sum -c SHA256SUMS`. Once provenance exists, verify a distribution with `gh attestation verify <wheel-file> --repo sm-joe/cloudsec-scanner`. Candidate artifacts are not stable releases.
+
+
+### Report compatibility and privacy
+
+Reports carry fingerprint_version: 2 and include full native resource IDs in fingerprint calculations. Regenerate pre-v2 baselines and re-review exception IDs; older fingerprint versions are rejected rather than silently matched. Use cloudsec scan TARGET --relative-paths --no-history to minimize local filesystem path disclosure in exported JSON, SARIF or text. This option does not anonymize cloud identifiers, resource names, advisory metadata or arbitrary diagnostic content. Do not publish sensitive reports without review. CI validates native reports against repository-pinned JSON, SARIF 2.1.0 and CycloneDX 1.6 schemas offline.

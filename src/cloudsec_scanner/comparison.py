@@ -14,7 +14,7 @@ class ComparisonError(ValueError):
 
 
 def _normalise_resource(finding: dict[str, Any]) -> str:
-    resource = finding.get("resource")
+    resource = finding.get("resource_id") or finding.get("resource")
     if not isinstance(resource, str):
         return ""
     resource = resource.strip()
@@ -111,6 +111,8 @@ def compare_report_documents(
     for document in (baseline_doc, current_doc):
         if document.get("coverage_complete") is False or document.get("errors"):
             raise ComparisonError("cannot compare incomplete scans")
+    if baseline_doc.get("fingerprint_version", 1) != current_doc.get("fingerprint_version", 1):
+        raise ComparisonError("finding fingerprint versions differ; regenerate baseline using current CLI")
     if baseline_doc.get("scan_profile") and current_doc.get("scan_profile") and baseline_doc["scan_profile"] != current_doc["scan_profile"]:
         raise ComparisonError("scan profiles differ")
     baseline, current = _index_report_findings(baseline_doc), _index_report_findings(current_doc)

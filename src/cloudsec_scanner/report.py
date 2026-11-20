@@ -41,13 +41,13 @@ def _sarif(result: ScanResult) -> dict[str, Any]:
         )
         item: dict[str, Any] = {
             "ruleId": finding.rule_id,
-            "partialFingerprints": {"cloudsecFindingId/v1": identity},
+            "partialFingerprints": {"cloudsecFindingId/v2": identity},
             "level": level_map.get(finding.severity, "warning"),
             "message": {"text": finding.message},
             "locations": [
                 {
                     "physicalLocation": {
-                        "artifactLocation": {"uri": finding.path.replace("\\", "/")},
+                        "artifactLocation": {"uri": quote(relative["path"].replace("\\", "/"), safe="/:")},
                         "region": {"startLine": finding.line or 1},
                     }
                 }

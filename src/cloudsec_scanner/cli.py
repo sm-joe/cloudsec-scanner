@@ -38,6 +38,7 @@ EXIT_ERROR = 3
 def _add_report_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--format", choices=("text", "json", "sarif"), default="text")
     parser.add_argument("--output", help="write report to this path")
+    parser.add_argument("--relative-paths", action="store_true", help="remove local absolute scan roots from exported reports")
     parser.add_argument("--exceptions", help="explicit YAML policy with expiring finding exceptions")
     parser.add_argument(
         "--severity", choices=tuple(SEVERITY_ORDER), help="override configured failure threshold"
@@ -169,7 +170,11 @@ def _finish_report(result, args, config, scan_type: str) -> int:
             raise ComparisonError("baseline report must contain a JSON object")
         comparison = compare_report_documents(baseline_doc, result.to_dict())
 
-    rendered = write_report(result, args.format, args.output)
+    export_result = result
+    if args.relative_paths:
+        from cloudsec_scanner.privacy import relative_report
+        export_result = relative_report(result)
+    rendered = write_report(export_result, args.format, args.output)
     if args.format == "text" or not args.output:
         print(rendered, end="")
 

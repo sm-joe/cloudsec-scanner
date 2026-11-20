@@ -58,6 +58,7 @@ class ScanResult:
 
         return {
             "schema_version": "1.0",
+            "fingerprint_version": 2,
             "tool": {"name": "cloudsec-scanner", "version": __version__},
             "target": self.target,
             "coverage_complete": self.coverage_complete and not self.errors,
