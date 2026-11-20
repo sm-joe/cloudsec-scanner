@@ -13,7 +13,11 @@ import json
 from pathlib import Path
 old = json.loads(Path("original-release/release.json").read_text())
 now = json.loads(Path("current-release.json").read_text())
-assert now == old, "release changed after backup"
+keys = ("id", "tag_name", "target_commitish", "draft", "prerelease", "immutable", "name", "body")
+assert all(now.get(key) == old.get(key) for key in keys), "release metadata changed after backup"
+def asset_state(release):
+    return sorted((a["id"], a["name"], a["digest"], a["size"]) for a in release["assets"])
+assert asset_state(now) == asset_state(old), "release assets changed after backup"
 PY
 names=(cloudsec_scanner-0.1.0-py3-none-any.whl cloudsec_scanner-0.1.0.tar.gz runtime-sbom.json SHA256SUMS)
 original=()
@@ -38,7 +42,7 @@ rollback() {
     mkdir -p restored-release
     gh release download v0.1.0 --dir restored-release --pattern '*'
     (cd restored-release && sha256sum -c ../original-release/original-digests.txt)
-    if [[ $? != 0 ]]; then echo "RESTORATION REQUIRES MANUAL REVIEW" >&2; fi
+    if [[ $? != 0 || "$(gh api "repos/$GH_REPO/git/ref/tags/v0.1.0" --jq .object.sha)" != "$ORIGINAL_SHA" ]]; then echo "RESTORATION REQUIRES MANUAL REVIEW" >&2; fi
   fi
   exit "$status"
 }
