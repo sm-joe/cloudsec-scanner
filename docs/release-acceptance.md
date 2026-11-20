@@ -28,3 +28,5 @@ PR #15 merged after 271 tests, all nine portability jobs and successful core/AWS
 
 
 An explicitly authorized, one-time refresh of the original v0.1.0 is guarded by the exact original tag, release ID and every original asset digest. It requires all existing main-only gates, verifies fresh attestations, preserves an original release backup, and verifies each uploaded asset before moving the tag. GitHub release asset replacement is not atomic; the script attempts rollback on failure. Subsequent main pushes cannot refresh a moved tag. No permanent mutable-publishing policy is introduced.
+
+The one-time refresh completed successfully at release source commit `d3299c1c8df3104ea8dcfbfc9818ef9b9b007549`. The temporary refresh job and script have been retired from main; their historical implementation and evidence remain available in Git history and the successful [release run](https://github.com/sm-joe/cloudsec-scanner/actions/runs/44759039564). Existing v0.1.0 assets must not be automatically replaced by future pushes.
