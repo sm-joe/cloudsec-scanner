@@ -148,8 +148,8 @@ def _finish_report(result, args, config, scan_type: str) -> int:
             baseline_doc = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
         except OSError as exc:
             raise ComparisonError(f"could not read baseline report {args.baseline}: {exc}") from exc
-        except json.JSONDecodeError as exc:
-            raise ComparisonError(f"baseline report {args.baseline} is not valid JSON: {exc}") from exc
+        except (json.JSONDecodeError, UnicodeError) as exc:
+            raise ComparisonError("baseline report is not valid UTF-8 JSON") from exc
         if not isinstance(baseline_doc, dict):
             raise ComparisonError("baseline report must contain a JSON object")
         comparison = compare_report_documents(baseline_doc, result.to_dict())
@@ -172,7 +172,8 @@ def _finish_report(result, args, config, scan_type: str) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return EXIT_ERROR
 
-    if result.errors:
+    if result.errors or not result.coverage_complete:
+        print("error: scan incomplete; see report for coverage and errors", file=sys.stderr)
         return EXIT_ERROR
 
     threshold = config["severity_threshold"]
@@ -181,7 +182,7 @@ def _finish_report(result, args, config, scan_type: str) -> int:
         assert comparison is not None
         blocking_findings = [
             item
-            for item in comparison["new"]
+            for item in comparison["new"] + [entry for entry in comparison["changed"] if SEVERITY_ORDER[entry["current_severity"]] < SEVERITY_ORDER[entry["previous_severity"]]]
             if SEVERITY_ORDER.get(
                 str(item["finding"].get("severity", "INFO")).upper(), 99
             )

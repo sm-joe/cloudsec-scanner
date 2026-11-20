@@ -253,9 +253,9 @@ Each finding includes a stable rule ID, title, severity, message, path, best-eff
 
 ## Implemented vs planned
 
-**Implemented in this MVP:** Python package and CLI; file/directory discovery; Terraform pattern-based rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; stable JSON report comparison; comparison-based CI gate for new findings and severity escalations; GitHub Actions test, scan, report artifact, and SARIF publication workflow; local SQLite scan history and lifecycle/trend commands.
+**Implemented in this MVP:** Python package and CLI; file/directory discovery; structured Terraform HCL rules; YAML/JSON parsing; initial AWS CloudFormation, Azure ARM, GCP configuration, Kubernetes pod/RBAC, and Dockerfile rules; secret-pattern checks with redacted evidence; exclusions and max-file-size guard; text/JSON/SARIF output; severity threshold and exit codes; stable JSON report comparison; comparison-based CI gate for new findings and severity escalations; GitHub Actions test, scan, report artifact, and SARIF publication workflow; local SQLite scan history and lifecycle/trend commands.
 
-**Not yet implemented:** comprehensive Azure/GCP rule coverage; full CIS benchmark coverage; robust HCL/Helm template parsing; complete CloudFormation resource/property coverage; broad secret entropy/context analysis; dependency manifest and lockfile SCA; OSV database update command; container image scanning; external scanner adapters; policy exceptions with expiry; loadable third-party rule packs; full SARIF schema validation and extensive integration/regression coverage.
+**Not yet implemented:** comprehensive Azure/GCP rule coverage; full CIS benchmark coverage; Terraform plan/expression evaluation and Helm template rendering; complete CloudFormation resource/property coverage; broad secret entropy/context analysis; additional dependency ecosystem coverage and offline OSV database updates; external scanner adapters; policy exceptions with expiry; loadable third-party rule packs; full SARIF schema validation and extensive integration/regression coverage.
 
 ## Development checks
 

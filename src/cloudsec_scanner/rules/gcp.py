@@ -28,7 +28,7 @@ def scan_gcp_document(doc: Any, path: Path, text: str) -> list[Finding]:
                 properties = {}
             if "storage" in resource_type and "bucket" in resource_type:
                 if (
-                    properties.get("iamConfiguration", {}).get("publicAccessPrevention")
+                    (properties.get("iamConfiguration") or {}).get("publicAccessPrevention")
                     == "inherited"
                 ):
                     findings.append(

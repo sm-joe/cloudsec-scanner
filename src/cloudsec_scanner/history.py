@@ -72,6 +72,13 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
             ON scan_runs(scanned_at DESC);
         """
     )
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(scan_runs)")}
+    if "project_key" not in columns:
+        connection.execute("ALTER TABLE scan_runs ADD COLUMN project_key TEXT NOT NULL DEFAULT ''")
+    if "scan_profile" not in columns:
+        connection.execute("ALTER TABLE scan_runs ADD COLUMN scan_profile TEXT NOT NULL DEFAULT ''")
+    connection.execute("PRAGMA user_version = 1")
+    connection.commit()
 
 
 def _index_findings(findings: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -161,7 +168,9 @@ def record_scan(
         raise HistoryError(f"unsupported scan type: {scan_type}")
     document = result.to_dict()
     findings = document["findings"]
-    is_complete = not bool(result.errors)
+    is_complete = result.coverage_complete and not bool(result.errors)
+    project_key = result.project_key or result.target
+    profile = result.scan_profile
     lifecycle: dict[str, Any] = {
         "status": "incomplete",
         "new_count": None,
@@ -177,10 +186,10 @@ def record_scan(
             previous_row = connection.execute(
                 """
                 SELECT findings_json FROM scan_runs
-                WHERE target = ? AND scan_type = ? AND is_complete = 1
+                WHERE project_key = ? AND scan_profile = ? AND scan_type = ? AND is_complete = 1
                 ORDER BY id DESC LIMIT 1
                 """,
-                (result.target, scan_type),
+                (project_key, profile, scan_type),
             ).fetchone()
             if previous_row is None:
                 lifecycle = {
@@ -204,8 +213,8 @@ def record_scan(
             INSERT INTO scan_runs (
                 scanned_at, target, scan_type, files_scanned, files_skipped,
                 finding_count, severity_counts_json, lifecycle_json, findings_json,
-                warnings_json, errors_json, is_complete
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                warnings_json, errors_json, is_complete, project_key, scan_profile
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 scanned_at,
@@ -220,6 +229,8 @@ def record_scan(
                 json.dumps(result.warnings),
                 json.dumps(result.errors),
                 int(is_complete),
+                project_key,
+                profile,
             ),
         )
         connection.commit()

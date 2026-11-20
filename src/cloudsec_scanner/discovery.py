@@ -9,6 +9,13 @@ SUPPORTED_NAMES = {"Dockerfile", "Containerfile", "requirements.txt", "package-l
 SUPPORTED_SUFFIXES = {".tf", ".yaml", ".yml", ".json", ".dockerfile"}
 
 
+SECRET_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".sh", ".bash", ".ps1", ".env", ".ini", ".cfg", ".conf", ".toml", ".properties", ".pem", ".key", ".txt", ".go", ".java", ".rb", ".php", ".cs", ".rs", ".xml"}
+SECRET_NAMES = {".env", ".npmrc", ".pypirc", "id_rsa", "id_ed25519", "Makefile"}
+
+def is_secret_candidate(path: Path) -> bool:
+    return is_supported(path) or path.name in SECRET_NAMES or path.name.startswith(".env.") or path.suffix.lower() in SECRET_SUFFIXES
+
+
 def is_supported(path: Path) -> bool:
     """Return whether a file type is handled by the scanner."""
     return path.name in SUPPORTED_NAMES or path.suffix.lower() in SUPPORTED_SUFFIXES
@@ -65,8 +72,10 @@ def discover(
     target: str,
     exclusions: list[str],
     max_file_bytes: int,
+    *, include_secrets: bool = False,
 ) -> tuple[list[Path], int, list[str]]:
     """Discover supported files, returning files, skipped count, and warnings."""
+    supported = is_secret_candidate if include_secrets else is_supported
     root = Path(target)
 
     if not root.exists():
@@ -77,7 +86,7 @@ def discover(
     if root.is_file():
         if _excluded(root, root.parent, exclusions):
             return [], 1, []
-        if not is_supported(root):
+        if not supported(root):
             return [], 1, [f"unsupported file type skipped: {root}"]
         try:
             if root.stat().st_size > max_file_bytes:
@@ -114,7 +123,7 @@ def discover(
                     skipped += 1
                     continue
 
-                if not is_supported(candidate):
+                if not supported(candidate):
                     continue
 
                 if not candidate.resolve().is_relative_to(resolved_root):

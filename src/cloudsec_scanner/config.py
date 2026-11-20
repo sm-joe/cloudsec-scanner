@@ -23,7 +23,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "fail_on_new_findings": False,
     "severity_overrides": {},
     "max_file_bytes": 2 * 1024 * 1024,
-    "scanners": ["iac", "secrets"],
+    "scanners": ["iac", "secrets", "dependencies"],
 }
 
 ALLOWED_SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}
@@ -69,6 +69,8 @@ def _validate_config(config: dict[str, Any]) -> dict[str, Any]:
             f"unsupported scanner(s): {names}; allowed scanners are: "
             f"{', '.join(sorted(ALLOWED_SCANNERS))}"
         )
+    if not scanners:
+        raise ValueError("at least one scanner is required")
     if len(scanners) != len(set(scanners)):
         raise ValueError("scanners must not contain duplicate entries")
 
@@ -113,7 +115,11 @@ def load_config(path: str | None) -> dict[str, Any]:
         raise ValueError(f"configuration file does not exist: {config_path}")
 
     try:
-        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        from cloudsec_scanner.safe_input import safe_yaml_documents
+        docs = safe_yaml_documents(config_path.read_text(encoding="utf-8"))
+        if len(docs) > 1:
+            raise ValueError("configuration must contain one YAML document")
+        loaded = docs[0] if docs else None
     except (OSError, UnicodeError, yaml.YAMLError) as exc:
         raise ValueError(f"could not read configuration {config_path}: {exc}") from exc
 
@@ -131,7 +137,5 @@ def write_default_config(path: str) -> None:
     """Write the default configuration to a file."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False),
-        encoding="utf-8",
-    )
+    with target.open("x", encoding="utf-8") as stream:
+        stream.write(yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))

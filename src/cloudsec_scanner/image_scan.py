@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -87,8 +88,8 @@ def scan_image(image: str, *, trivy_path: str | None = None, timeout: int = 900)
     configured registry credentials). This function does not pull the image itself.
     """
     image = image.strip()
-    if not image:
-        raise ImageScanError("image reference must not be empty")
+    if not image or image.startswith("-") or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+\-]*", image):
+        raise ImageScanError("invalid image reference")
 
     executable = trivy_path or shutil.which("trivy")
     if not executable:
@@ -119,8 +120,7 @@ def scan_image(image: str, *, trivy_path: str | None = None, timeout: int = 900)
         raise ImageScanError(f"could not execute Trivy: {exc}") from exc
 
     if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no diagnostic provided"
-        raise ImageScanError(f"Trivy image scan failed (exit {completed.returncode}): {detail}")
+        raise ImageScanError(f"Trivy image scan failed (exit {completed.returncode}); check registry access and image reference")
 
     try:
         document = json.loads(completed.stdout)
@@ -131,26 +131,28 @@ def scan_image(image: str, *, trivy_path: str | None = None, timeout: int = 900)
 
     target = f"image://{image}"
     result = ScanResult(target=target, files_scanned=1)
-    results = document.get("Results", [])
+    results = document.get("Results")
     if not isinstance(results, list):
         raise ImageScanError("Trivy JSON report has an invalid Results field")
 
     for section in results:
         if not isinstance(section, dict):
-            continue
+            raise ImageScanError("Trivy JSON report has an invalid result entry")
         vulnerabilities = section.get("Vulnerabilities") or []
         if not isinstance(vulnerabilities, list):
             raise ImageScanError("Trivy JSON report contains an invalid Vulnerabilities field")
         for item in vulnerabilities:
-            if isinstance(item, dict):
-                result.findings.append(_finding_from_vulnerability(image, target, item))
+            if not isinstance(item, dict):
+                raise ImageScanError("invalid vulnerability entry")
+            result.findings.append(_finding_from_vulnerability(image, target, item))
 
         misconfigurations = section.get("Misconfigurations") or []
         if not isinstance(misconfigurations, list):
             raise ImageScanError("Trivy JSON report contains an invalid Misconfigurations field")
         for item in misconfigurations:
-            if isinstance(item, dict):
-                result.findings.append(_finding_from_misconfiguration(image, target, item))
+            if not isinstance(item, dict):
+                raise ImageScanError("invalid misconfiguration entry")
+            result.findings.append(_finding_from_misconfiguration(image, target, item))
 
     # De-duplicate repeated reports for the same check/package and location.
     unique: dict[tuple[str, str, str | None], Finding] = {}

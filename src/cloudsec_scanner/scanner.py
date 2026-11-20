@@ -13,6 +13,7 @@ import yaml
 from cloudsec_scanner.dependency_scan import scan_dependencies
 from cloudsec_scanner.discovery import discover
 from cloudsec_scanner.models import Finding, ScanResult
+from cloudsec_scanner.safe_input import validate_document, safe_yaml_documents
 from cloudsec_scanner.rules import (
     scan_aws_document,
     scan_azure_document,
@@ -82,13 +83,18 @@ def _finding(
     )
 
 
+def _metadata_name(doc: dict) -> str:
+    metadata = doc.get("metadata")
+    return str(metadata.get("name", "unknown")) if isinstance(metadata, dict) else "unknown"
+
+
 def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
     findings: list[Finding] = []
     try:
         if path.suffix.lower() == ".json":
             docs = [json.loads(text)]
         else:
-            docs = list(yaml.safe_load_all(text))
+            docs = safe_yaml_documents(text)
     except (json.JSONDecodeError, yaml.YAMLError) as exc:
         raise ValueError(f"malformed YAML/JSON: {exc}") from exc
 
@@ -97,6 +103,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
             continue
         if not isinstance(doc, (dict, list)):
             continue
+        validate_document(doc)
         flattened = list(_walk(doc))
         is_k8s = isinstance(doc, dict) and ("apiVersion" in doc or "kind" in doc)
         is_cf = isinstance(doc, dict) and ("Resources" in doc or "AWSTemplateFormatVersion" in doc)
@@ -116,7 +123,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             line,
                             "Set securityContext.privileged to false or remove it; use narrowly scoped capabilities.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -131,7 +138,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"hostNetwork\s*:\s*true"),
                             "Disable hostNetwork unless the workload has a documented requirement.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -146,7 +153,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"runAsUser\s*:\s*0"),
                             "Run the workload as a non-root UID and set runAsNonRoot: true.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -161,7 +168,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"automountServiceAccountToken\s*:\s*true"),
                             "Set automountServiceAccountToken: false unless the application requires Kubernetes API access.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -176,7 +183,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"allowPrivilegeEscalation\s*:\s*true"),
                             "Set allowPrivilegeEscalation: false unless explicitly required.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -191,7 +198,7 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
                             _line_for(text, r"readOnlyRootFilesystem\s*:\s*false"),
                             "Set readOnlyRootFilesystem: true and mount writable paths explicitly.",
                             "Kubernetes",
-                            str(doc.get("metadata", {}).get("name", "unknown")),
+                            _metadata_name(doc),
                             ("CIS Kubernetes Benchmark",),
                         )
                     )
@@ -218,98 +225,31 @@ def _scan_yaml_json(path: Path, text: str) -> list[Finding]:
 
 
 def _scan_terraform(path: Path, text: str) -> list[Finding]:
-    findings: list[Finding] = []
-    checks = [
-        (
-            r"(?s)resource\s+\"aws_s3_bucket_acl\"\s+\"([^\"]+)\"\s*\{[^}]*acl\s*=\s*\"public-read(?:-write)?\"",
-            "AWS-TF-001",
-            "Public S3 bucket ACL",
-            "HIGH",
-            "An S3 bucket ACL grants public read or write access.",
-            "Remove public ACLs and use S3 Block Public Access with least-privilege bucket policies.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_security_group_rule\"\s+\"([^\"]+)\"\s*\{[^}]*type\s*=\s*\"ingress\"[^}]*cidr_blocks\s*=\s*\[[^]]*\"0\.0\.0\.0/0\"",
-            "AWS-TF-002",
-            "Security group ingress open to the internet",
-            "HIGH",
-            "An ingress rule allows traffic from every IPv4 address.",
-            "Restrict source CIDRs to trusted networks and limit exposed ports.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_ebs_volume\"\s+\"([^\"]+)\"\s*\{[^}]*encrypted\s*=\s*false",
-            "AWS-TF-003",
-            "EBS volume encryption disabled",
-            "HIGH",
-            "The EBS volume explicitly disables encryption.",
-            "Enable EBS encryption; prefer the AWS-managed EBS KMS key when a customer-managed key is not required.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_db_instance\"\s+\"([^\"]+)\"\s*\{[^}]*storage_encrypted\s*=\s*false",
-            "AWS-TF-004",
-            "RDS storage encryption disabled",
-            "HIGH",
-            "The database explicitly disables storage encryption.",
-            "Set storage_encrypted = true and verify encryption requirements for existing databases.",
-        ),
-        (
-            r"(?s)resource\s+\"aws_s3_bucket\"\s+\"([^\"]+)\"\s*\{[^}]*force_destroy\s*=\s*true",
-            "AWS-TF-005",
-            "S3 bucket force destroy enabled",
-            "LOW",
-            "Terraform can destroy a non-empty bucket without an additional safeguard.",
-            "Disable force_destroy for production buckets unless lifecycle automation explicitly requires it.",
-        ),
-    ]
-    for pattern, rule_id, title, severity, message, remediation in checks:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            line = text.count("\n", 0, match.start()) + 1
-            findings.append(
-                _finding(
-                    rule_id,
-                    title,
-                    severity,
-                    message,
-                    path,
-                    line,
-                    remediation,
-                    "AWS",
-                    match.group(1),
-                    ("CIS AWS Foundations Benchmark",),
-                )
-            )
-    if re.search(
-        r"(?s)resource\s+\"aws_iam_policy\".*?\bAction\s*=\s*\[?\s*\"\*\".*?\bResource\s*=\s*\[?\s*\"\*\"",
-        text,
-    ):
-        match = re.search(r"resource\s+\"aws_iam_policy\"", text)
-        line = text.count("\n", 0, match.start()) + 1 if match else 1
-        findings.append(
-            _finding(
-                "IAM-TF-001",
-                "Wildcard IAM policy permissions",
-                "HIGH",
-                "An IAM policy appears to allow all actions on all resources.",
-                path,
-                line,
-                "Scope actions and resources to the minimum permissions required.",
-                "AWS",
-                compliance=("CIS AWS Foundations Benchmark",),
-                category="iam",
-            )
-        )
-    findings.extend(scan_terraform_document(path, text))
-    return findings
+    return scan_terraform_document(path, text)
 
 
 def _scan_dockerfile(path: Path, text: str) -> list[Finding]:
     findings: list[Finding] = []
     user_seen = False
+    aliases: dict[str, bool] = {}
+    stage_alias = None
     for number, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()
+        if re.match(r"(?i)^FROM\s+", stripped):
+            tokens = stripped.split()
+            tokens = [token for token in tokens[1:] if not token.startswith("--")]
+            image = tokens[0] if tokens else ""
+            inherited_stage = image.lower() in aliases
+            user_seen = aliases.get(image.lower(), False)
+            if len(tokens) >= 3 and tokens[1].lower() == "as":
+                aliases[tokens[2].lower()] = user_seen
+            stage_alias = tokens[2].lower() if len(tokens) >= 3 and tokens[1].lower() == "as" else None
         if re.match(r"(?i)^USER\s+", stripped):
-            user_seen = True
-        if re.match(r"(?i)^FROM\s+[^\s]+:(?:latest)?\s*(?:#.*)?$", stripped):
+            user = stripped.split()[1].split(":")[0]
+            user_seen = bool(user) and user.lower() not in {"root", "0"} and not user.startswith("$")
+            if stage_alias:
+                aliases[stage_alias] = user_seen
+        if re.match(r"(?i)^FROM\s+", stripped) and not inherited_stage and image != "scratch" and "@" not in image and (":" not in image.rsplit("/", 1)[-1] or image.endswith(":latest")):
             findings.append(
                 _finding(
                     "DOCKER-001",
@@ -367,17 +307,42 @@ def _scan_secrets(path: Path, text: str) -> list[Finding]:
 
 
 def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
-    files, skipped, warnings = discover(target, config["exclude"], config["max_file_bytes"])
-    result = ScanResult(target=str(Path(target)), files_skipped=skipped, warnings=warnings)
     enabled = set(config.get("scanners", ["iac", "secrets"]))
+    files, skipped, warnings = discover(target, config["exclude"], config["max_file_bytes"], include_secrets="secrets" in enabled)
+    result = ScanResult(target=str(Path(target)), files_skipped=skipped, warnings=warnings)
+    result.coverage_complete = bool(files) and bool(enabled) and not warnings
+    # Security-policy changes make lifecycle comparisons non-equivalent.
+    import hashlib
+    profile = {
+        "scanners": sorted(enabled),
+        "exclude": sorted(config["exclude"]),
+        "exclude_rules": sorted(config.get("exclude_rules", [])),
+        "max_file_bytes": config["max_file_bytes"],
+    }
+    result.scan_profile = hashlib.sha256(json.dumps(profile, sort_keys=True).encode()).hexdigest()
+    result.project_key = str(Path(target).resolve())
     excluded_rules = set(config.get("exclude_rules", []))
     for path in files:
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            with path.open("rb") as stream:
+                raw = stream.read(config["max_file_bytes"] + 1)
+            if len(raw) > config["max_file_bytes"]:
+                raise ValueError("file exceeded scan size limit")
+            text = raw.decode("utf-8")
             current: list[Finding] = []
             if "secrets" in enabled:
                 current.extend(_scan_secrets(path, text))
-            if "iac" in enabled:
+            # Policy-only YAML is not an infrastructure template. The active
+            # configuration is independently validated by load_config.
+            is_policy = False
+            if path.name in {".cloudsec.yml", ".cloudsec.yaml", ".cloudsec-ci.yml"}:
+                from cloudsec_scanner.config import DEFAULT_CONFIG
+                try:
+                    policy_docs = list(yaml.safe_load_all(text))
+                    is_policy = len(policy_docs) == 1 and isinstance(policy_docs[0], dict) and set(policy_docs[0]) <= set(DEFAULT_CONFIG)
+                except (yaml.YAMLError, RecursionError, TypeError):
+                    pass
+            if "iac" in enabled and path.name != "package-lock.json" and not is_policy:
                 if path.suffix.lower() == ".tf":
                     current.extend(_scan_terraform(path, text))
                 elif (
@@ -412,6 +377,7 @@ def scan_target(target: str, config: dict[str, Any]) -> ScanResult:
             ]
             result.findings.extend(filtered)
             result.files_scanned += 1
-        except (OSError, ValueError) as exc:
-            result.errors.append(f"{path}: {exc}")
+        except (OSError, ValueError, RecursionError, TypeError, AttributeError) as exc:
+            result.errors.append(f"{path}: scan failed ({type(exc).__name__}); check file syntax and scanner configuration")
+            result.coverage_complete = False
     return result

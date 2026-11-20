@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from cloudsec_scanner import __version__
 
 SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
@@ -41,12 +42,18 @@ class ScanResult:
     files_skipped: int = 0
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    coverage_complete: bool = True
+    scan_profile: str = ""
+    project_key: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": "1.0",
-            "tool": {"name": "cloudsec-scanner", "version": "0.1.0"},
+            "tool": {"name": "cloudsec-scanner", "version": __version__},
             "target": self.target,
+            "coverage_complete": self.coverage_complete and not self.errors,
+            "scan_profile": self.scan_profile,
+            "project_key": self.project_key,
             "summary": {
                 "files_scanned": self.files_scanned,
                 "files_skipped": self.files_skipped,
